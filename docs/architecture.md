@@ -1,6 +1,6 @@
 # OrderFlow architecture
 
-Status: accepted design. Milestone 02 implements the API/worker composition and empty application/test boundaries; business/database/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
+Status: accepted design. Milestones 02/02a implement host composition and HTTP/application primitives; business/database/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
 
 ## 1. Deployment and code organization
 
@@ -38,6 +38,8 @@ docs/adr/
 Three production .NET projects are enough. Use feature folders within the application assembly with clearly named services/entities and narrow module interfaces; no separate repository per entity, no generic repository hiding SQL, no event bus or mediator package merely for layering. Domain rules should be small methods/value types where useful; transaction orchestration belongs in application services. Controllers validate HTTP shape, authorize, call one use case, and translate outcomes. API/worker never duplicate core business rules.
 
 The initial solution is `OrderFlow.slnx`. API and Worker each reference Application; UnitTests references Application; IntegrationTests references the two hosts. Domain/application/infrastructure are folder boundaries inside Application, as ADR-001 requires. The assembly contains only boundary documentation until features exist. API's only current endpoint is GET `/api/health/live`; Worker runs Generic Host without jobs. See [ADR-007](adr/0007-solution-bootstrap.md) for the scaffold decision and [README](../README.md) for commands.
+
+Milestone 02a adds BCL-only Application/Common primitives for errors/money/time/pagination and API/Http for exception/validation/status mapping, typed JSON conversion, safe structured request logs and Development-only OpenAPI. Both hosts register TimeProvider. No module entity/context/controller CRUD is introduced. The preceding scaffold description records milestone 02; Application now contains these shared primitives. See [HTTP contract](http-contract.md) and [ADR-008](adr/0008-http-application-foundations.md).
 
 ## 2. Platform and version policy
 

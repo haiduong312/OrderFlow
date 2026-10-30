@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-10-30 (Asia/Ho_Chi_Minh). Current milestone: **02 — initial solution structure**. The .NET solution and independently runnable API/worker composition are implemented. No frontend, authentication, database migrations, catalog, or order behavior exists yet. A01's .NET portion is complete; its client/proxy/database composition obligations remain for later milestones.
+Updated: 2026-10-30 (Asia/Ho_Chi_Minh). Current milestone: **02a — shared HTTP/application foundations** (requested addition to the original roadmap). Host composition, consistent HTTP errors/validation/traces/logs, USD money, UTC time helpers, pagination validation and Development OpenAPI are implemented. No frontend, authentication, database migrations, catalog or order behavior exists yet. A01/A03/A08/A22 remain partial beyond the explicitly tested foundation scope.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -31,7 +31,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | --- | --- | --- | --- | --- |
 | 01 | Inspect workspace; establish spec, architecture, status and initial ADRs | — | D01–D06 | Complete: documentation only |
 | 02 | Scaffold API/Application/Worker and test projects; pin supported SDK/NuGet/tools; build | 01 | A01 | Complete: .NET composition portion |
-| 03 | PostgreSQL local setup, shared context, owner schemas, initial migration/test database harness | 02 | A01, A16 | Pending |
+| 03 | PostgreSQL local setup, shared context, owner schemas, initial migration/test database harness | 02, 02a | A01, A16 | Pending |
 | 04 | React/TypeScript skeleton; pinned client tooling, TanStack Query/Zustand, dev same-origin proxy | 02 | A01 | Pending |
 | 05 | Identity schema, Customer registration/login/logout/session, safe Admin bootstrap and cookie settings | 03 | A02 | Pending |
 | 06 | Antiforgery, API auth errors, roles/ownership conventions and HTTP test helpers | 05 | A02 | Pending |
@@ -60,6 +60,8 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 29 | Full acceptance walkthrough; portfolio architecture/demo/interview guide and verified limitations | 28 | A01–A24 | Pending |
 
 Feature order is intentional: HTTP idempotency/stock correctness precede payment; outbox/worker durability precede external intentions; auth/CSRF precede protected client flows; fault tests and operability precede the final demo. Reservation/order foreign keys are introduced together in 11; command-to-order links are completed in 12 after both schemas exist. Minimal outbox persistence in 11 makes checkout atomic in 12, before dispatch is implemented in 14. Each feature milestone writes its relevant unit/SQL/HTTP tests then; milestone 26 is cross-feature fault coverage, not permission to delay all concurrency testing.
+
+Requested supplemental milestone **02a** depends on 02 and is **Complete: shared HTTP/application foundations**. It establishes the common error/JSON/time/pagination conventions used by 03 and later HTTP features. IDs 01–29 and their business scopes are retained; 03 remains PostgreSQL work, not implicitly completed by this addition. ADR-008 records this roadmap adjustment and the clarified money input/output grammar.
 
 ## Checks and limitations for milestone 01
 
@@ -181,3 +183,64 @@ Domain rules và use case sẽ nằm theo module/feature trong Application; pers
 Before proceeding, explain the five-project reference graph, folder-vs-project boundary choice, host lifecycle, real scope of smoke tests, and reproducible dependency workflow. Remaining work is milestones 03–29, the rest of A01, and A02–A24. Next: PostgreSQL/context/initial migration and integration harness, without jumping into authentication/catalog/orders.
 
 Suggested commit title: `chore: initialize OrderFlow solution structure` (the milestone supplied no explicit title). No commit was created.
+
+## Milestone 02a — shared HTTP/application foundations
+
+### Scope, inspection and completed acceptance
+
+Before editing, read AGENTS.md, specification, architecture, implementation status, ADRs, existing source/tests/project files/central package versions/lockfiles, and Git status. Git was valid/clean on main at inspection. Reused all five projects, SDK 10.0.114 and existing package versions; no migrations existed. No unrelated work was changed or commit/push/deployment performed.
+
+Reported the roadmap mismatch before implementation: the user requested HTTP/application foundations while numbered 03 was PostgreSQL. Added 02a without renumbering 01–29 or implementing database prerequisites. Also clarified money input accepting at most two fractional digits while preserving two-place output, in ADR-008/specification.
+
+| Requirement | Completed behavior / evidence |
+| --- | --- |
+| Consistent errors and explicit business mapping | ApiProblemDetails contains type/title/status/code/traceId/errors; eight expected application mappings plus documented bodyless HTTP statuses; unclassified failures remain logged sanitized 500 |
+| Validation and privacy | MVC binding/DataAnnotations failures return 400 with safe camelCase/path field errors; malformed JSON, unknown JSON properties, invalid scale/range/tokens and pagination tested; not_found never includes owner/resource details |
+| Trace and structured request/failure logs | Same body/header/log trace, W3C traceparent linkage, untrusted X-Trace-Id ignored; route templates preserved after exception handling; sensitive test body/query/cookie/auth/exception markers absent from captured logs/responses |
+| Cancellation | Real client cancellation after deterministic action-entry gate is logged Aborted/diagnostic 499, without business/500 Error; non-request cancellation is a sanitized 500 |
+| Time and money primitives | Both hosts register TimeProvider; UTC/microsecond truncation and inclusive expiry tested using a manual clock; typed UsdMoney accepts invariant 0–2-place strings, writes 2 places, rejects extra scale/range, leaves ordinary numbers numeric |
+| Pagination and OpenAPI | Validated defaults 1/20, size <=100, overflow guarded; deterministic sorting conventions documented; first-party OpenAPI 10.0.14, generated 3.1.1 document in Development only, money/error schemas verified |
+| Examples and scope | HTTP contract includes real liveness/404 and test-probe validation/money response examples; production does not expose test probes or CRUD; no database migration |
+
+A03 is partial (money primitive/HTTP JSON only; positive-price/domain totals and PostgreSQL constraints pending). A08 is partial (generic boundary/clock precision only; actual reservations/deadlines pending). A22 is partial (safe HTTP/request/failure logs only; operational monitoring/readiness remains pending). A02 ownership/Identity/antiforgery and all SQL transaction/race criteria remain unimplemented; a safe common 404 mapping does not prove an ownership query. No additional acceptance criterion is claimed complete merely from a synthetic error probe.
+
+### Important files, packages and migrations
+
+- Application/Common: Errors/ApplicationError.cs and ApplicationFailureException.cs; Money/UsdMoney.cs; Time/BusinessTime.cs; Pagination/PageRequest.cs. Application still has no external package/HTTP dependency.
+- API/Http: HttpFoundations registration/pipeline, ApiProblemDetails, ApiProblems, ApiExceptionHandler, RequestLoggingMiddleware and UsdMoneyJsonConverter. Program wires these and typed liveness metadata; WorkerHost registers the same TimeProvider abstraction.
+- Tests: UsdMoneyTests, BusinessTimeTests, PageRequestTests; HTTP test factory/controller/capture logger and HttpFoundationTests; original two composition tests retained.
+- [HTTP contract](http-contract.md), [ADR-008](adr/0008-http-application-foundations.md), updated README/architecture/specification/ADR index and this status.
+- One new direct package: Microsoft.AspNetCore.OpenApi **10.0.14**, centrally pinned. NuGet resolved Microsoft.OpenApi **2.12.2** transitively; API/integration lockfiles updated by restore. Other direct versions/SDK unchanged. **Migrations: none.**
+
+### Execution, results and limitations
+
+Tooling environment used DOTNET_CLI_HOME=/tmp/orderflow-m02/dotnet-home, DOTNET_CLI_TELEMETRY_OPTOUT=1, NUGET_PACKAGES=/tmp/orderflow-m02/packages, and NUGET_HTTP_CACHE_PATH=/tmp/orderflow-m02/http-cache for restore. All build/test results are outside the repository under /tmp/orderflow-foundations. Network/loopback permission was required for NuGet/VSTest as in milestone 02; no approval rejection remained outstanding.
+
+Commands/results:
+
+1. `dotnet restore OrderFlow.slnx --artifacts-path /tmp/orderflow-foundations/artifacts` — exit 0, official package resolved and lockfiles generated, no preview/audit bypass.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-foundations/artifacts -m:1 -nr:false` — final exit 0, all five projects, **0 warnings/errors**.
+3. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-foundations/artifacts -m:1 -nr:false --logger 'trx;LogFilePrefix=foundations' --results-directory /tmp/orderflow-foundations/test-results` — final exit 0: **37 unit + 49 integration/composition = 86 passed**, 0 failed/skipped. Final result files: foundations_net10.0_20261030160500.trx (integration), foundations_net10.0_20261030160501.trx (unit), under that results directory.
+4. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-foundations/artifacts -m:1 -nr:false` — exit 0, all five projects, no warnings/audit bypass. `git diff --check` passed. Final Python inventory/link/config/XML/reference/lock verification passed: 61 source/config/document files, 65 valid local file/anchor links, five acyclic projects, six central versions matching lockfiles, no generated build/certificate/private configuration files. Tracked host settings contain only safe logging/AllowedHosts keys.
+
+5. Launched the API separately with `DOTNET_ENVIRONMENT=Development dotnet run --project src/OrderFlow.Api -c Release --no-build --no-restore --no-launch-profile --artifacts-path /tmp/orderflow-foundations/artifacts -- --urls http://127.0.0.1:5080` (same tooling overrides). Actual curl checks returned 200 liveness, 404 application/problem+json even with Accept:text/html, and OpenAPI 3.1.1 containing only liveness plus the shared error schema (no probe/CRUD routes). Checked matching trace headers/body/logs and template-only JSON log output using synthetic sensitive path/query markers. Ctrl+C shutdown exited 0; verification hosts were stopped.
+
+Initial build attempts caught a WriteAsJsonAsync overload mismatch and an xUnit2031 analyzer error; both corrected without suppressions using the installed reference signature/preferred assertion. A premature no-build test invocation could run only UnitTests before the integration assembly existed and exited 1; it is not claimed as a passing suite. The first complete test run caught two real issues: nullable money schema metadata and original route template loss after exception handling. Both were fixed. Actual Kestrel console inspection then revealed native framework scopes included raw RequestPath despite safe event fields. Disabled API JSON IncludeScopes and added a regression through the actual configured JSON formatter with synthetic sensitive scope markers; final full suite passed all 86 tests. Trace remains an explicit event field. Tests assert actual body/status/header/log fields and cancellation progression, not arbitrary sleeps.
+
+There is no SQL/EF InMemory/SQLite test or actual database provider in this milestone. A synthetic DbException tests HTTP classification only, not SQL behavior. No authentication, ownership query, antiforgery, CRUD, price arithmetic, reservation, collection query or job is implemented. Pagination sorting remains a documented SQL convention until queries exist. Current production DTOs have no timestamp field; future timestamp JSON must still emit specification-compliant Z strings. Native pre-pipeline/response-started transport failures cannot be promised a fresh complete ProblemDetails body. Windows/macOS and proxy/HTTPS deployment were not exercised.
+
+### Manual verification, trade-offs and interview preparation
+
+Run the README locked restore/Release build/test commands. Launch the API and request `/api/health/live`, then `/api/does-not-exist` with Accept:text/html: expect 200 JSON and generic 404 problem JSON, both with X-Trace-Id. Set DOTNET_ENVIRONMENT=Development and restart to inspect `/openapi/v1.json`; Production does not expose it. Validation/money/forced-error routes are test-only, so exercise them through tests rather than deploying probes. Exact HTTP response examples are in http-contract.md. No database setup is needed for these checks.
+
+Luồng chính: Program đăng ký các nền tảng rồi đưa request qua trace/logging, exception handler và status-code handling. MVC kiểm tra JSON/model trước action; lỗi application được map rõ ràng. Lỗi bất ngờ trả 500 với mã internal_error, server log type/code/trace và không log raw exception có thể chứa dữ liệu nhạy cảm. UsdMoney giữ decimal chính xác và converter chỉ đổi kiểu tiền thành chuỗi; quantity/ratio vẫn là số. TimeProvider được inject, helper chuẩn hóa UTC/microsecond và so sánh hết hạn bằng >=. Worker chưa có job.
+
+Trade-offs: simple expected-failure exceptions avoid an unnecessary framework; generic binding messages protect values but are less descriptive. Redacting raw exception text trades some immediate diagnostics for privacy. UsdMoney allows zero for reports, so future price rules must separately require >0. Folder boundaries and future SQL sorting still need review/testing; current tests do not replace actual PostgreSQL tests.
+
+1. **Vì sao không convert toàn bộ decimal sang string?** Hiểu typed money converter giữ hợp đồng tiền mà không làm đổi các số không phải tiền; parser phải kiểm tra scale trước khi database có thể làm tròn.
+2. **Khi nào cancellation là 500?** Hiểu RequestAborted chứng minh client đã hủy; OperationCanceledException khi request còn hoạt động không được tự coi là thành công hay lỗi business.
+3. **Vì sao lỗi ownership dùng 404?** Hiểu query phải lọc theo owner, và cùng một not_found che việc resource tồn tại; mapping chung chưa phải bằng chứng authorization đã được triển khai.
+
+Before proceeding, explain the pipeline order, validation/error/log trace flow, known-vs-unknown failure classification, money input/output/zero rules, clock precision, pagination overflow, and scope of HTTP-only tests. Milestones 03–29 remain pending.
+
+Suggested commit title: `feat: add shared HTTP and application foundations` (no explicit title was supplied). No commit was created.

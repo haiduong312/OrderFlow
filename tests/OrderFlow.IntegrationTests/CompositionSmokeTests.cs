@@ -37,6 +37,7 @@ public class CompositionSmokeTests
         using var host = WorkerHost.Build(["--environment", Environments.Production]);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+        Assert.Same(TimeProvider.System, host.Services.GetRequiredService<TimeProvider>());
 
         await host.StartAsync(timeout.Token);
         Assert.True(lifetime.ApplicationStarted.IsCancellationRequested);

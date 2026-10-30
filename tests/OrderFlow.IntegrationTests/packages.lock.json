@@ -305,6 +305,11 @@
         "resolved": "10.0.14",
         "contentHash": "1bbZqqCJTPba3inTADExbp/9PsGVyvGOX3zr6tFr7ySCgVkX9Lpw7BV0TizktNItd3SsbUu1sQfSAYm1GZMoNw=="
       },
+      "Microsoft.OpenApi": {
+        "type": "Transitive",
+        "resolved": "2.12.2",
+        "contentHash": "ZkT7qiJe0Kj0+DTZOZo+xrDy1kNmdsWFQVPIQLNx9ZJ0T9cB2LG7r+Bi60so8/+yg1nkS7QCPadrzsTG4VPKrA=="
+      },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
         "resolved": "17.14.1",
@@ -372,6 +377,7 @@
       "orderflow.api": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.AspNetCore.OpenApi": "[10.0.14, )",
           "OrderFlow.Application": "[1.0.0, )"
         }
       },
@@ -383,6 +389,15 @@
         "dependencies": {
           "Microsoft.Extensions.Hosting": "[10.0.14, )",
           "OrderFlow.Application": "[1.0.0, )"
+        }
+      },
+      "Microsoft.AspNetCore.OpenApi": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.14, )",
+        "resolved": "10.0.14",
+        "contentHash": "3M6yO4nv8fmvM/1X7DqQcMxw/ptNLBcUzZt19SBEyfZF32gqZuwoPNnYd1xlDnFvQOGOkZDncf7p9E24blcTkQ==",
+        "dependencies": {
+          "Microsoft.OpenApi": "[2.12.2, 3.0.0)"
         }
       },
       "Microsoft.Extensions.Hosting": {

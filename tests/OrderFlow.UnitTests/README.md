@@ -1,3 +1,3 @@
 # Unit tests
 
-This test project intentionally has no tests yet: milestone 02 introduces no domain rules. It references Application, not either host. Add meaningful rule tests alongside the feature that introduces those rules; do not add an always-passing placeholder test. Until then, the test runner reports no tests for this assembly. Executable composition smoke tests are in OrderFlow.IntegrationTests.
+This project references Application, not either host. Milestone 02a adds meaningful primitive tests for invariant USD money/range/scale, injected-clock UTC precision/expiry boundaries, and pagination bounds/overflow. Domain feature tests are still added with their own features. HTTP/composition/serialization/error/logging probes are in OrderFlow.IntegrationTests; there is no always-passing placeholder test or EF InMemory database substitute.
