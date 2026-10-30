@@ -1,6 +1,6 @@
 # OrderFlow architecture
 
-Status: accepted design, no application implemented in milestone 01. Behavioral contract: [project specification](project-spec.md). Delivery order: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
+Status: accepted design. Milestone 02 implements the API/worker composition and empty application/test boundaries; business/database/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
 
 ## 1. Deployment and code organization
 
@@ -18,7 +18,7 @@ flowchart LR
 
 The simulator is a provider-boundary adapter used by the worker, not a third application or real provider. Its state is durable and independently committed; it must not participate in the merchant business transaction. API and worker share application logic and schema, but have separate process lifetimes and DI scopes. Stopping the worker must not stop API reads/checkout.
 
-Planned layout (directories/projects are not generated in milestone 01):
+Layout contract (the .NET solution is generated in milestone 02; module implementations, context/migrations, client, and future jobs are added by their own milestones):
 
 ```text
 src/OrderFlow.Api/                    HTTP composition, controllers, auth, filters
@@ -37,11 +37,15 @@ docs/adr/
 
 Three production .NET projects are enough. Use feature folders within the application assembly with clearly named services/entities and narrow module interfaces; no separate repository per entity, no generic repository hiding SQL, no event bus or mediator package merely for layering. Domain rules should be small methods/value types where useful; transaction orchestration belongs in application services. Controllers validate HTTP shape, authorize, call one use case, and translate outcomes. API/worker never duplicate core business rules.
 
+The initial solution is `OrderFlow.slnx`. API and Worker each reference Application; UnitTests references Application; IntegrationTests references the two hosts. Domain/application/infrastructure are folder boundaries inside Application, as ADR-001 requires. The assembly contains only boundary documentation until features exist. API's only current endpoint is GET `/api/health/live`; Worker runs Generic Host without jobs. See [ADR-007](adr/0007-solution-bootstrap.md) for the scaffold decision and [README](../README.md) for commands.
+
 ## 2. Platform and version policy
 
 Target the stable .NET 10 LTS / ASP.NET Core 10 / EF Core 10 family with the compatible Npgsql EF provider, PostgreSQL 18, Node.js 24 LTS, React/TypeScript, TanStack Query, and Zustand. .NET 10 LTS is selected from the [official support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core). No previews. These are platform-family decisions, not installed dependency claims.
 
 Inspection found SDK `10.0.114`, ASP.NET Core/.NET runtimes `10.0.14`, Node `v24.19.0`, npm `11.17.0`, Python `3.12.3`. There are no repository manifests/locks or installed project packages to preserve. Milestone 01 installs nothing. Milestone 02 must verify the available SDK's official support and pin an actual supported SDK in `global.json`; pin exact NuGet versions centrally and tool versions, use package lockfiles and locked restores. Milestone 04 must select compatible stable frontend versions from official releases, use exact versions without `^`, `~`, `*`, or `latest`, pin package-manager/runtime versions and commit its lockfile. Milestone 03/25 pins an actual PostgreSQL image patch/digest. Do not guess future patch numbers or confuse runtime and SDK version numbers. Consult official docs when writing version-sensitive APIs and record the resolved versions in status.
+
+Milestone 02 resolves the .NET portion: global.json pins SDK 10.0.114 with previews/roll-forward disabled; Directory.Packages.props pins Hosting/Mvc.Testing 10.0.14, Test SDK 17.14.1, xUnit 2.9.3 and VS runner 3.1.4. All five projects have generated package lockfiles. Nullable references/warnings-as-errors, NuGet auditing, and centralized artifact output are enabled. No extra CLI tool, EF/Npgsql or frontend package is needed in this milestone. The preceding inspection paragraph records the milestone-01 starting point, not current absence of manifests.
 
 ## 3. Module and schema ownership
 
