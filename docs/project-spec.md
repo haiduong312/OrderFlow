@@ -12,6 +12,8 @@ No source, tests, package manifests, migrations, previous ADRs, or milestone roa
 
 If later instructions contradict this contract, report the conflict before changing dependent behavior. Record material changes in a superseding ADR and update acceptance criteria, roadmap, and tests together. Routine implementation choices do not require another approval.
 
+Milestone 03 implements shared PostgreSQL/Identity storage only. Per the latest scope instruction, auth endpoints move to 04 and React setup to 05. ADR-009 generalizes the planned command-response tables into shared IdempotencyRecords without changing replay/ownership behavior; [persistence guide](persistence.md) documents the actual schema and dedicated migration/seed/data-lifetime steps. Later milestones still implement command replay, dispatch, lease coordination and business entities.
+
 ## 2. Actors, ownership, and product boundaries
 
 | Actor | Permissions |

@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-10-30 (Asia/Ho_Chi_Minh). Current milestone: **02a — shared HTTP/application foundations** (requested addition to the original roadmap). Host composition, consistent HTTP errors/validation/traces/logs, USD money, UTC time helpers, pagination validation and Development OpenAPI are implemented. No frontend, authentication, database migrations, catalog or order behavior exists yet. A01/A03/A08/A22 remain partial beyond the explicitly tested foundation scope.
+Updated: 2026-11-02 (Asia/Ho_Chi_Minh). Current milestone: **03 — PostgreSQL persistence and reliability storage**. Scoped Identity-compatible context, initial migration, shared idempotency/outbox/inbox schema, PostgreSQL-only Compose profile and explicit roles-only dev seed are implemented/tested. No auth endpoint, frontend, catalog/order/payment behavior or broker/lease processor exists yet. A01/A03/A06/A08/A16–A19/A22 remain partial beyond the evidence below.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -31,15 +31,15 @@ This is the initial roadmap established here, not an externally supplied milesto
 | --- | --- | --- | --- | --- |
 | 01 | Inspect workspace; establish spec, architecture, status and initial ADRs | — | D01–D06 | Complete: documentation only |
 | 02 | Scaffold API/Application/Worker and test projects; pin supported SDK/NuGet/tools; build | 01 | A01 | Complete: .NET composition portion |
-| 03 | PostgreSQL local setup, shared context, owner schemas, initial migration/test database harness | 02, 02a | A01, A16 | Pending |
-| 04 | React/TypeScript skeleton; pinned client tooling, TanStack Query/Zustand, dev same-origin proxy | 02 | A01 | Pending |
-| 05 | Identity schema, Customer registration/login/logout/session, safe Admin bootstrap and cookie settings | 03 | A02 | Pending |
-| 06 | Antiforgery, API auth errors, roles/ownership conventions and HTTP test helpers | 05 | A02 | Pending |
+| 03 | PostgreSQL/Identity storage, reliability schema, initial migration, Compose and actual database tests | 02, 02a | A01, A16 | Complete: persistence foundations |
+| 04 | Customer browser auth endpoints/cookies, required CSRF and safe Admin bootstrap using existing Identity storage | 03 | A02 | Pending |
+| 05 | React/TypeScript skeleton; pinned client tooling, TanStack Query/Zustand, dev same-origin proxy | 02, 02a | A01 | Pending |
+| 06 | Authorization/ownership conventions, CSRF/auth regressions and HTTP test helpers | 04 | A02 | Pending |
 | 07 | Catalog domain/admin CRUD/deactivation; exact money JSON, versions, product snapshots | 03, 06 | A03 | Pending |
 | 08 | Inventory balances/history schema, guarded adjustments and ledger constraints; reservation domain rules | 07 | A04, A07, A16 | Pending |
 | 09 | Admin stock HTTP endpoints, operation replay, stock races and constraint tests | 08 | A04 | Pending |
-| 10 | Database command-idempotency primitives, canonical bodies and exact response replay storage support | 03, 06 | A06 | Pending |
-| 11 | Order/line/reservation schema and domain, deadline rules, minimal transactional outbox storage and state tests | 07, 08 | A03, A07, A08 | Pending |
+| 10 | Operation-specific normalization, replay/conflict protocol using the shared idempotency store | 03, 06 | A06 | Pending |
+| 11 | Order/line/reservation schema/domain, deadline rules, transactional order events and state tests | 07, 08 | A03, A07, A08 | Pending |
 | 12 | Atomic CreateOrder/reserve + original response; stock/idempotency concurrency and rollback | 09, 10, 11 | A05–A08, A16, A23 | Pending |
 | 13 | Own order reads/list, pending cancellation/release and authorization regressions | 12 | A02, A07–A09 | Pending |
 | 14 | Outbox dispatch/inbox and worker lease/retry foundation; expiry worker + deterministic races | 13 | A07–A09, A16–A19 | Pending |
@@ -48,7 +48,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 17 | Signed callback receipt/inbox, verification, duplicate/quarantine handling and replay tests | 16 | A13, A14 | Pending |
 | 18 | Atomic capture confirmation/stock consumption; late capture compensation/refund reconciliation and races | 17 | A07–A13, A16, A17, A19, A23 | Pending |
 | 19 | Admin fulfillment state machine, expected versions, order inspection and authorization | 13, 18 | A02, A15 | Pending |
-| 20 | Browser session/CSRF flow, active catalog, cart and exact cents state | 04, 06, 07 | A03, A20 | Pending |
+| 20 | Browser session/CSRF flow, active catalog, cart and exact cents state | 05, 06, 07 | A03, A20 | Pending |
 | 21 | Checkout UI, pending key/body recovery, authoritative order/deadline/payment/cancel views | 18, 20 | A03, A20 | Pending |
 | 22 | Admin catalog/stock/order/fulfillment UI with state/version conflict handling | 09, 19, 20 | A20 | Pending |
 | 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Pending |
@@ -59,7 +59,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 28 | Operational backlog/failure view, health/lag metrics, audited same-identity operator replay and recovery runbook | 25, 26, 27 | A19, A22 | Pending |
 | 29 | Full acceptance walkthrough; portfolio architecture/demo/interview guide and verified limitations | 28 | A01–A24 | Pending |
 
-Feature order is intentional: HTTP idempotency/stock correctness precede payment; outbox/worker durability precede external intentions; auth/CSRF precede protected client flows; fault tests and operability precede the final demo. Reservation/order foreign keys are introduced together in 11; command-to-order links are completed in 12 after both schemas exist. Minimal outbox persistence in 11 makes checkout atomic in 12, before dispatch is implemented in 14. Each feature milestone writes its relevant unit/SQL/HTTP tests then; milestone 26 is cross-feature fault coverage, not permission to delay all concurrency testing.
+Feature order is intentional: HTTP idempotency/stock correctness precede payment; outbox/worker durability precede external intentions; auth/CSRF precede protected client flows; fault tests and operability precede the final demo. Reservation/order foreign keys are introduced together in 11; command-to-order links can be completed in 12 after both schemas exist. Reliability storage is now implemented in 03, ahead of its operation-specific use in 10/11/12 and dispatch in 14. Required CSRF protection ships with auth endpoints in 04; 06 extends authorization/regression coverage. Each feature milestone writes its relevant tests then; 26 does not defer concurrency proof. The latest instruction swaps the prior 04 React/05 Identity deliverables to 05/04; ADR-009 records that scope correction.
 
 Requested supplemental milestone **02a** depends on 02 and is **Complete: shared HTTP/application foundations**. It establishes the common error/JSON/time/pagination conventions used by 03 and later HTTP features. IDs 01–29 and their business scopes are retained; 03 remains PostgreSQL work, not implicitly completed by this addition. ADR-008 records this roadmap adjustment and the clarified money input/output grammar.
 
@@ -244,3 +244,72 @@ Trade-offs: simple expected-failure exceptions avoid an unnecessary framework; g
 Before proceeding, explain the pipeline order, validation/error/log trace flow, known-vs-unknown failure classification, money input/output/zero rules, clock precision, pagination overflow, and scope of HTTP-only tests. Milestones 03–29 remain pending.
 
 Suggested commit title: `feat: add shared HTTP and application foundations` (no explicit title was supplied). No commit was created.
+
+## Milestone 03 — PostgreSQL persistence and durable reliability storage
+
+### Inspection and scope decisions
+
+Read AGENTS.md, specification, architecture, status and ADRs; inspected all five projects, existing tests, SDK/central versions/lockfiles and migration absence. `git status --short --branch` was clean on main at start. Reused the existing solution and SDK. No unrelated work, commit, push, deployment or user data deletion was performed.
+
+Reported two scope differences before implementation: latest request places auth endpoints at 04 (previously 05) and asks for shared reliability storage now (previous storage prerequisites were spread over 10/11/14). Roadmap now assigns 04 browser auth with required CSRF, 05 React, 06 further authorization/regression work; 10/11/14 retain their operation/event/dispatch behavior on the shared schema. ADR-009 records this, plus the generalization of CreateOrderRequests/PaymentRequests into IdempotencyRecords. No auth endpoint, fake user, catalog/order/payment entity, publisher or background lease processor was implemented.
+
+### Completed milestone acceptance and evidence
+
+| Requirement | Result / evidence |
+| --- | --- |
+| Actual PostgreSQL and initial migration | Complete: PostgreSQL 18.6-bookworm pinned tag/digest; clean database migrated with 20261102023642_InitialPersistence; second migrate no-op; model drift check clean; idempotent SQL script generated |
+| Scoped shared context and Identity storage | Complete: API/worker share registration, separate context per scope; actual connections and UserManager/IUserStore persistence verified; explicit Identity Guid/table/schema mappings, standard indexes/FKs; no cookies/auth endpoints |
+| IdempotencyRecords | Complete storage only: user/operation/key unique index, C collation, restrictive User FK, canonical text/SHA-256, original successful byte response/status/type/Location; state/time/hash/key CHECKs and immutable-request/completed-snapshot trigger |
+| OutboxMessages / ProcessedMessages | Complete storage only: independent event and consumer/message identities, envelope/version/payload fields, publish/process states, attempts/due/owner/token/expiry/terminal fields, CHECKs and queue indexes; inbox does not require a local outbox event |
+| Shared atomic unit of work | Complete foundation proof: Identity row change + request snapshot + outbox + inbox commit or roll back in one PostgreSQL transaction; no independent repository/store commits |
+| Precision/time | Complete conventions: UTC/microsecond DateTimeOffset converter, numeric(18,2)/UsdMoney conversion; actual offset/precision roundtrip and test-only temporary money-table maximum-value roundtrip |
+| Compose/data lifetime | Complete configuration/health/data checks: PostgreSQL-only dev profile, loopback port, file-backed private secret, named volume at PG18 parent directory, health check; actual Compose down/up without --volumes retained migration/two seeded roles |
+| Dedicated migration and seed | Complete: no startup migration/EnsureCreated/reset; explicit Development-only roles seed rerun twice, two roles/zero accounts; guide covers inspection, preserving old data via new project, and manual destructive reset only |
+
+These are foundations, not full A06/A16–A19: normalization/replay HTTP conflicts, actual order/stock/history atomicity, worker claim/fencing/retry/delivery and consumer-effect protocols remain pending. A02 authentication/ownership is pending. A01 still needs client/proxy composition; A03 still needs real positive-price/entity constraints and authoritative totals. Runtime least-privilege roles/history permissions and production deployment remain later operational work.
+
+### Files, versions and migration
+
+- [Compose](../compose.yaml), [.env.example](../.env.example), [.gitignore](../.gitignore) and [local EF tool manifest](../.config/dotnet-tools.json).
+- [OrderFlowDbContext/converters](../src/OrderFlow.Application/Persistence/OrderFlowDbContext.cs), [registration](../src/OrderFlow.Application/Persistence/PersistenceRegistration.cs), [design-time factory](../src/OrderFlow.Application/Persistence/OrderFlowDesignTimeFactory.cs), and [ApplicationUser](../src/OrderFlow.Application/Modules/Identity/ApplicationUser.cs).
+- IdempotencyRecord + explicit configuration; OutboxMessage/ProcessedMessage + explicit configurations; [explicit role seed](../src/OrderFlow.Application/Persistence/DevelopmentSeeder.cs); API/worker composition wiring and Worker seed command.
+- New migration [20261102023642_InitialPersistence](../src/OrderFlow.Application/Persistence/Migrations/20261102023642_InitialPersistence.cs), designer and model snapshot. Ten application tables (seven Identity plus three reliability) and the messaging migration-history table; no future module tables.
+- [PostgreSQL fixture](../tests/OrderFlow.IntegrationTests/Persistence/PostgresDatabase.cs), [10 PostgreSQL tests](../tests/OrderFlow.IntegrationTests/Persistence/PersistenceTests.cs), [snapshot guard unit tests](../tests/OrderFlow.UnitTests/IdempotencyRecordTests.cs), updated generated package locks and central packages.
+- [Persistence runbook](persistence.md), [ADR-009](adr/0009-postgresql-reliability-foundations.md), README/spec/architecture/roadmap updates.
+
+New direct versions: EF Core/Design/Identity **10.0.14**, Npgsql.EntityFrameworkCore.PostgreSQL **10.0.3** (Npgsql **10.0.3** transitively); local dotnet-ef **10.0.14**. SDK/other direct package pins unchanged. Official release/API docs and actual package/tool metadata were consulted. Docker image `postgres:18.6-bookworm@sha256:5c4783a8cc3f0074912164f94dfa1be4e043438f0f707cf968d7af9a0d31a2c8` was pulled and version verified in psql. No preview, broker/testcontainer package or generic repository was added.
+
+### Exact checks and results
+
+Tooling used private/non-secret path overrides: DOTNET_CLI_HOME=/tmp/orderflow-m02/dotnet-home, NUGET_PACKAGES=/tmp/orderflow-m02/packages, NUGET_HTTP_CACHE_PATH=/tmp/orderflow-m02/http-cache, DOTNET_CLI_TELEMETRY_OPTOUT=1. All build/test/tool SQL outputs are outside the repository under /tmp/orderflow-persistence. Private random verification credentials were read from a mode-0600 temporary file and passed through process environment; values were never printed or written to source/fixtures/logs/Git. ConnectionStrings__OrderFlow and ORDERFLOW_TEST_POSTGRES were set privately for their respective commands.
+
+1. `dotnet tool restore` — exit 0, pinned dotnet-ef 10.0.14. `dotnet restore OrderFlow.slnx --artifacts-path /tmp/orderflow-persistence/artifacts -m:1 -nr:false` and final same command with `--locked-mode` — exit 0, no warnings/audit bypass.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-persistence/artifacts -m:1 -nr:false` — final exit 0, all five projects, **0 warnings/errors**.
+3. `dotnet ef migrations add InitialPersistence --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output-dir Persistence/Migrations` — exit 0; reviewed generated SQL and added the explicit immutable-snapshot trigger/Down cleanup before first application. EF commands used ArtifactsPath=/tmp/orderflow-persistence/artifacts to match metadata/build output.
+4. `dotnet ef database update --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` — exit 0 on empty orderflow DB. EF's initial absent-history probe logged a failed SELECT before creating/applying the first migration; final application/history succeeded. Repeated command exit 0, no migrations applied. `dotnet ef migrations has-pending-model-changes` with the same project/startup/configuration flags — exit 0, no changes. `dotnet ef migrations script --idempotent --output /tmp/orderflow-persistence/initial.sql` with the same flags — exit 0, reviewable SQL generated.
+5. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-persistence/artifacts -m:1 -nr:false --logger 'trx;LogFilePrefix=persistence' --results-directory /tmp/orderflow-persistence/test-results` with private ORDERFLOW_TEST_POSTGRES — exit 0: **59 integration/composition + 43 unit = 102 passed**, 0 failed/skipped. Final TRX files: persistence_net10.0_20261102100511.trx and persistence_net10.0_20261102100512.trx under that results directory. All SQL tests used the actual PostgreSQL provider and a newly generated/migrated database; no EF InMemory/SQLite substitute. The fixture dropped only its own generated test database afterward.
+6. PostgreSQL-only Compose `config --quiet`, `up -d --wait --wait-timeout 90`, then `down` (no volumes flag), `up -d --wait` — health passed, migration and two roles survived container recreation; user count stayed zero. `psql` inspected server version, tables, indexes, constraints and snapshot trigger. Found Identity tables/standard indexes, 10 messaging indexes including history PK, 15 CHECKs, 7 FKs and the immutable-snapshot trigger. Ten application tables plus history were present.
+7. `DOTNET_ENVIRONMENT=Development dotnet run --project src/OrderFlow.Worker -c Release --no-build --no-restore --no-launch-profile --artifacts-path /tmp/orderflow-persistence/artifacts -- seed-development` — exit 0 twice, no duplicate roles/users/passwords; no missing migrations. Separate normal host scope connectivity/Identity stores are covered in the SQL test. Existing HTTP/composition tests still prove liveness and worker startup without external services.
+8. After stopping/removing the verification container/network **without deleting the named volume**, the same solution test command with `--filter 'Category!=PostgreSQL'` and no test connection setting passed the external-service-free subset: 49 HTTP/composition + 43 unit = **92 passed**. Volume `orderflow-m03-check_postgres_data` remains retained. `git diff --check`, final file/link/JSON/XML/reference/lock/roadmap checks and TRX-counter verification passed: 82 repository files, 91 local links, five acyclic projects, ten central direct package pins, no generated/private output or verification credential in deliverables. SQL script includes the snapshot-protection trigger.
+
+Docker environment limitation and workaround: `/snap/bin/docker` failed first on a read-only Snap runtime path, then on missing snap-confine cap_dac_override even with elevated execution. The actual `/snap/docker/current/bin/docker` and standalone `/snap/docker/current/usr/libexec/docker/cli-plugins/docker-compose` worked (Engine 29.3.1, Compose 5.1.1). The daemon has a separate filesystem and could not bind the session's /tmp password file. The committed file-secret Compose configuration passed validation, but that literal mount could not run in this environment. An **uncommitted /tmp verification-only override** removed the bind secret and injected the generated private value through environment; the same image/profile/health/port/volume were exercised successfully. A normal local daemon can use the committed profile directly. No approval review rejection remains outstanding.
+
+Initial SQL test attempts correctly exposed test-assumption errors: deleting a user with its tracked restrictive dependent first hit EF's client-side guard; clearing tracked dependents let the test reach PostgreSQL, where ON DELETE RESTRICT returns SQLSTATE **23001**, unlike missing-FK insertion **23503**. Corrected the assertion to the exact restrict_violation code, without changing or weakening production FK behavior. Subsequent SQL/full runs passed. No failed attempt is claimed as a pass.
+
+Unverified/deferred: literal local-secret bind mounting under this isolated daemon, Windows/macOS, production TLS/proxy/runtime DB privileges, migration Down execution on populated data, auth/ownership SQL/HTTP, business aggregates, idempotent HTTP replay, broker/consumer publishing, expired-lease fencing/claim races and external side effects. All of these require later evidence; schema/transaction tests alone do not claim exactly-once delivery.
+
+### Manual verification, flow and interview preparation
+
+Follow persistence.md: create private secret once -> start Compose dev DB -> export private connection -> restore local tool/build -> run dedicated EF update -> inspect tables -> optionally run roles-only seed twice -> set test administrator connection and run tests. Normal startup does not perform migration or seed. `down` keeps data; using a new project/port preserves old data while giving a fresh volume. Destructive `down --volumes` is documented for a deliberately selected disposable project only; no reset script or automatic wipe was added/executed. Verification data/volume are retained after stopping the verification project.
+
+Luồng chính: API và worker đăng ký cùng một DbContext theo scope. Khi cần persistence, scope lấy cấu hình kết nối riêng và tạo context; không có database call/migrate lúc startup. Identity storage và ba bảng reliability nằm trong cùng context nên SaveChanges/transaction có thể ghi thay đổi, snapshot, outbox và inbox cùng nhau. Unique/FK/CHECK và trigger do PostgreSQL bảo vệ qua nhiều process. Converter chuẩn hóa UTC/microsecond và tiền numeric(18,2). Migration chạy riêng bằng EF CLI; seed chỉ là lệnh Development tường minh tạo hai role, không tạo tài khoản. Chưa có publisher/worker claim hay nghiệp vụ đơn hàng.
+
+Trade-offs: shared schema/context simplify atomicity but couple releases; initial dev owner has broad privileges and must not become a production runtime account. Completed snapshots consume storage and remain immutable; canonicalization/replay still belong to future operation handlers. PostgreSQL trigger is intentionally provider-specific. No idempotency lease is needed when claim and completion share one transaction; incomplete claim commit prevention remains a use-case protocol. Outbox/inbox fields prepare later coordination but do not implement retries/fencing/delivery by themselves.
+
+1. **Vì sao outbox và business change dùng chung DbContext/transaction?** Hiểu commit/rollback nguyên tử và vì sao một store tự commit riêng có thể tạo trạng thái lệch.
+2. **Unique key khác lease thế nào?** Hiểu unique user/operation/key hoặc consumer/message bảo vệ danh tính bền vững; lease chỉ phân công tạm thời và cần conditional SQL/token kiểm tra khi triển khai worker.
+3. **Vì sao không migrate/seed ở startup mỗi replica?** Hiểu schema release là bước operator riêng, role seed phải tường minh, và named volume giữ dữ liệu qua container recreation.
+
+Next: milestone 04 browser Identity authentication with mandatory CSRF; React setup is now 05. Milestones 04–29 and remaining runtime acceptance criteria stay pending.
+
+Suggested commit title: `feat: add PostgreSQL persistence and reliability foundations` (no explicit title was supplied). No commit was created.

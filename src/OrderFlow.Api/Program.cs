@@ -1,4 +1,5 @@
 using OrderFlow.Api.Http;
+using OrderFlow.Application.Persistence;
 
 namespace OrderFlow.Api;
 
@@ -8,6 +9,7 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddHttpFoundations();
+        builder.Services.AddOrderFlowPersistence(builder.Configuration);
         var app = builder.Build();
         app.UseHttpFoundations();
 

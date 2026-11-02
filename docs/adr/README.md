@@ -12,5 +12,6 @@ All records below are accepted design decisions dated 2026-10-30. Accepted does 
 | [ADR-006](0006-money-time-and-client-state.md) | Exact USD amounts, UTC time and client state ownership |
 | [ADR-007](0007-solution-bootstrap.md) | Initial solution, host composition, folder boundaries and reproducible dependency baseline |
 | [ADR-008](0008-http-application-foundations.md) | Shared HTTP error/trace contract, typed money/time/pagination and development OpenAPI |
+| [ADR-009](0009-postgresql-reliability-foundations.md) | PostgreSQL/Identity storage, shared reliability tables, dedicated migrations and explicit dev seed |
 
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.
