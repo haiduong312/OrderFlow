@@ -9,6 +9,7 @@ namespace OrderFlow.IntegrationTests.Http;
 
 // Registered explicitly by FoundationApiFactory, not a production application part.
 [ApiController]
+[IgnoreAntiforgeryToken] // Serialization/error probes are not production browser endpoints.
 [Route("_tests/foundations")]
 public sealed class FoundationTestController : ControllerBase
 {

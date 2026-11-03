@@ -12,7 +12,7 @@ No source, tests, package manifests, migrations, previous ADRs, or milestone roa
 
 If later instructions contradict this contract, report the conflict before changing dependent behavior. Record material changes in a superseding ADR and update acceptance criteria, roadmap, and tests together. Routine implementation choices do not require another approval.
 
-Milestone 03 implements shared PostgreSQL/Identity storage only. Per the latest scope instruction, auth endpoints move to 04 and React setup to 05. ADR-009 generalizes the planned command-response tables into shared IdempotencyRecords without changing replay/ownership behavior; [persistence guide](persistence.md) documents the actual schema and dedicated migration/seed/data-lifetime steps. Later milestones still implement command replay, dispatch, lease coordination and business entities.
+Milestone 03 implements shared PostgreSQL/Identity storage; milestone 04 adds browser authentication described in [authentication](authentication.md) and [ADR-010](adr/0010-identity-cookie-authentication.md). Per the latest scope instruction, auth endpoints move to 04 and React setup to 05. ADR-009 generalizes the planned command-response tables into shared IdempotencyRecords without changing replay/ownership behavior; [persistence guide](persistence.md) documents the actual schema and dedicated migration/seed/data-lifetime steps. Later milestones still implement command replay, dispatch, lease coordination and business entities.
 
 ## 2. Actors, ownership, and product boundaries
 
@@ -144,9 +144,9 @@ Payment request idempotency uses `(userId, "StartPayment:v1", orderId, key)` and
 
 Collections use `page` (default 1), `pageSize` (default 20, maximum 100), stable timestamp/ID ordering, and `{items,page,pageSize,totalCount}`. Invalid filters/pagination return 400. Reporting requires `from < to`, maximum 366 days; days are UTC. Version conflicts return 409 `version_conflict`; product updates and fulfillment increments use explicit integer versions. A stale version cannot overwrite a concurrent change.
 
-The [shared HTTP contract](http-contract.md) defines the implemented error DTO/status mappings, trace/log rules, money grammar, pagination offset bound and default `CreatedAt DESC, Id DESC` ordering. An added foundations milestone 02a precedes later HTTP features; the original PostgreSQL milestone 03 remains pending. These foundations do not implement resource ownership queries or collections.
+The [shared HTTP contract](http-contract.md) defines the implemented error DTO/status mappings, trace/log rules, money grammar, pagination offset bound and default `CreatedAt DESC, Id DESC` ordering. An added foundations milestone 02a precedes later HTTP features; the PostgreSQL milestone 03 is complete (see status for evidence). These foundations do not implement resource ownership queries or collections.
 
-Errors use Problem Details with stable `code`, `traceId`, and validation fields where relevant: 400 validation/antiforgery, 401 unauthenticated, 403 forbidden, 404 absent/not owned, 409 state/idempotency/stock/version conflict, 413 excessive body, 429 throttled, 503 transient infrastructure failure, 500 unexpected failure. Never expose stack traces, SQL, or secrets. Cookie authentication returns API 401/403, never redirects to HTML login. Callback invalid signature returns 401, malformed schema 400, oversized body 413; same provider event ID with different authenticated payload returns 409 and an alert. Quarantine valid unknown references durably, acknowledge 202, and expose the failure for reconciliation.
+Errors use Problem Details with stable `code`, `traceId`, and validation fields where relevant: 400 validation/antiforgery, 401 unauthenticated, 403 forbidden, 404 absent/not owned, 409 state/idempotency/stock/version conflict, 413 excessive body, 429 throttled, 503 transient infrastructure failure, 500 unexpected failure. Never expose stack traces, SQL, or secrets. Cookie authentication returns API 401/403, never redirects to HTML login. Auth-specific codes are 400 `antiforgery_failed`/`https_required` and 401 `invalid_credentials`; duplicate registration uses 400 `validation_failed`. Callback invalid signature returns 401, malformed schema 400, oversized body 413; same provider event ID with different authenticated payload returns 409 and an alert. Quarantine valid unknown references durably, acknowledge 202, and expose the failure for reconciliation.
 
 ## 7. Consistency and durable messaging
 
@@ -190,8 +190,8 @@ These are implementation obligations. Milestone 01 passes only the documentation
 | D04 | 01–29 dependency map and pending acceptance/test obligations recorded | Status roadmap, 01 |
 | D05 | Initial accepted ADRs exist and local document links resolve | ADR index + link/consistency check, 01 |
 | D06 | No business source, package installation, migration, commit, or deployment added | File inventory, 01 |
-| A01 | Reproducible stable dependencies; API/client/worker separately start; one browser origin | Restore/build, lockfiles and smoke checks, 02–04, 25 |
-| A02 | Identity cookies, CSRF, roles, ownership and no public role escalation | Actual HTTP tests incl. anonymous login CSRF, cross-user 404, cookie flags, API 401/403, 05–06, 19 |
+| A01 | Reproducible stable dependencies; API/client/worker separately start; one browser origin | Restore/build, lockfiles and smoke checks, 02–05, 25 |
+| A02 | Identity cookies, CSRF, roles, ownership and no public role escalation | Actual HTTP tests incl. anonymous login CSRF, cross-user 404, cookie flags, API 401/403, 04, 06, 13, 19, 26 |
 | A03 | Positive exact USD money, bounded integer quantities, immutable line snapshots and overflow rejection | Domain + JSON/SQL/client tests, 07, 11, 20–21 |
 | A04 | `0 <= Reserved <= OnHand`, Available formula, guarded stock adjustments, version conflicts | Direct SQL constraint tests + concurrent HTTP adjustments, 08–09 |
 | A05 | Reserve every line or none; no overselling across independent contexts/processes | PostgreSQL rollback and last-unit races; all participants reach stock update, 12 |

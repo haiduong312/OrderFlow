@@ -272,10 +272,11 @@ public sealed class PersistenceTests(PostgresDatabase database)
         return user;
     }
 
-    private static ApplicationUser User(DateTimeOffset now) => new()
+    private static ApplicationUser User(DateTimeOffset now)
     {
-        Id = Guid.NewGuid(), UserName = "test-" + Guid.NewGuid().ToString("N"), CreatedAt = now
-    };
+        var email = "test-" + Guid.NewGuid().ToString("N") + "@example.invalid";
+        return new ApplicationUser { Id = Guid.NewGuid(), UserName = email, Email = email, CreatedAt = now };
+    }
 
     private static IdempotencyRecord Completed(Guid user, string operation, string key, byte[]? body = null)
     {

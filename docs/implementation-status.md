@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-02 (Asia/Ho_Chi_Minh). Current milestone: **03 — PostgreSQL persistence and reliability storage**. Scoped Identity-compatible context, initial migration, shared idempotency/outbox/inbox schema, PostgreSQL-only Compose profile and explicit roles-only dev seed are implemented/tested. No auth endpoint, frontend, catalog/order/payment behavior or broker/lease processor exists yet. A01/A03/A06/A08/A16–A19/A22 remain partial beyond the evidence below.
+Updated: 2026-11-02 (Asia/Ho_Chi_Minh). Current milestone: **04 — Identity browser authentication**. Registration/login/logout/current-user, antiforgery, role policies, per-process rate limits and explicitly enabled Development-only account seeding are implemented/tested. No frontend, catalog/order/payment behavior or broker/lease processor exists yet. A02 remains partial for future order ownership/browser/shared-key deployment tests; A01/A03/A06/A08/A16–A19/A22 remain partial beyond the evidence below.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -32,7 +32,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 01 | Inspect workspace; establish spec, architecture, status and initial ADRs | — | D01–D06 | Complete: documentation only |
 | 02 | Scaffold API/Application/Worker and test projects; pin supported SDK/NuGet/tools; build | 01 | A01 | Complete: .NET composition portion |
 | 03 | PostgreSQL/Identity storage, reliability schema, initial migration, Compose and actual database tests | 02, 02a | A01, A16 | Complete: persistence foundations |
-| 04 | Customer browser auth endpoints/cookies, required CSRF and safe Admin bootstrap using existing Identity storage | 03 | A02 | Pending |
+| 04 | Customer browser auth endpoints/cookies, required CSRF and safe Admin bootstrap using existing Identity storage | 03 | A02 | Complete: auth foundation; ownership features remain later |
 | 05 | React/TypeScript skeleton; pinned client tooling, TanStack Query/Zustand, dev same-origin proxy | 02, 02a | A01 | Pending |
 | 06 | Authorization/ownership conventions, CSRF/auth regressions and HTTP test helpers | 04 | A02 | Pending |
 | 07 | Catalog domain/admin CRUD/deactivation; exact money JSON, versions, product snapshots | 03, 06 | A03 | Pending |
@@ -54,12 +54,12 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Pending |
 | 24 | Versioned reporting projection, daily winning sales, range/auth tests and report UI | 19, 20, 23 | A17, A18, A21 | Pending |
 | 25 | Reproducible API/client/worker/proxy local composition, migration command, runtime DB roles and readiness | 22, 24 | A01, A16, A22 | Pending |
-| 26 | Multi-worker/crash/uncertain commit/stale lease fault suite; retry and no-network-in-transaction evidence | 18, 23, 24, 25 | A12, A17–A19, A23 | Pending |
+| 26 | Deployment hardening/shared protected Data Protection keys; multi-worker/crash/uncertain commit/stale lease fault suite; retry/no-network-in-transaction evidence | 04, 18, 23, 24, 25 | A02, A12, A17–A19, A22, A23 | Pending |
 | 27 | Browser acceptance flows; cross-user/CSRF/auth regressions; structured redaction/config checks | 21, 22, 25, 26 | A02, A20, A22 | Pending |
 | 28 | Operational backlog/failure view, health/lag metrics, audited same-identity operator replay and recovery runbook | 25, 26, 27 | A19, A22 | Pending |
 | 29 | Full acceptance walkthrough; portfolio architecture/demo/interview guide and verified limitations | 28 | A01–A24 | Pending |
 
-Feature order is intentional: HTTP idempotency/stock correctness precede payment; outbox/worker durability precede external intentions; auth/CSRF precede protected client flows; fault tests and operability precede the final demo. Reservation/order foreign keys are introduced together in 11; command-to-order links can be completed in 12 after both schemas exist. Reliability storage is now implemented in 03, ahead of its operation-specific use in 10/11/12 and dispatch in 14. Required CSRF protection ships with auth endpoints in 04; 06 extends authorization/regression coverage. Each feature milestone writes its relevant tests then; 26 does not defer concurrency proof. The latest instruction swaps the prior 04 React/05 Identity deliverables to 05/04; ADR-009 records that scope correction.
+Feature order is intentional: HTTP idempotency/stock correctness precede payment; outbox/worker durability precede external intentions; auth/CSRF precede protected client flows; fault tests and operability precede the final demo. Reservation/order foreign keys are introduced together in 11; command-to-order links can be completed in 12 after both schemas exist. Reliability storage is now implemented in 03, ahead of its operation-specific use in 10/11/12 and dispatch in 14. Required CSRF protection ships with auth endpoints in 04; 06 extends authorization/regression coverage. Each feature milestone writes its relevant tests then; 26 does not defer concurrency proof. The latest instruction swaps the prior 04 React/05 Identity deliverables to 05/04; ADR-009 records that scope correction. The milestone-04 request additionally assigns shared Data Protection key implementation to 26; ADR-010 extends that milestone with deployment hardening while retaining its fault suite. Milestone 25 remains local composition.
 
 Requested supplemental milestone **02a** depends on 02 and is **Complete: shared HTTP/application foundations**. It establishes the common error/JSON/time/pagination conventions used by 03 and later HTTP features. IDs 01–29 and their business scopes are retained; 03 remains PostgreSQL work, not implicitly completed by this addition. ADR-008 records this roadmap adjustment and the clarified money input/output grammar.
 
@@ -313,3 +313,69 @@ Trade-offs: shared schema/context simplify atomicity but couple releases; initia
 Next: milestone 04 browser Identity authentication with mandatory CSRF; React setup is now 05. Milestones 04–29 and remaining runtime acceptance criteria stay pending.
 
 Suggested commit title: `feat: add PostgreSQL persistence and reliability foundations` (no explicit title was supplied). No commit was created.
+
+## Milestone 04 — Identity browser authentication
+
+### Inspection and scope
+
+Read AGENTS.md, project contract, architecture, status and recorded ADRs; inspected the clean Git checkout, existing API/worker/context/test code, pinned SDK/packages and initial migration before editing. Reused Identity storage and HTTP ProblemDetails/trace/log foundations. SDK 10.0.114, ASP.NET Core/Identity 10.0.14 and the package graph are unchanged. No new dependency, migration, authentication token infrastructure or business CRUD was added. No agents, commit, push, deployment or data reset was performed.
+
+Scope adjustment reported: the current request places shared Data Protection key implementation in **26**. The earlier roadmap had local deployment in 25 and fault tests in 26. ADR-010 explicitly extends 26 with replica key/TLS/proxy hardening, preserving its fault-suite prerequisites. Current key configuration only sets application name OrderFlow and uses the framework local ring; it does not claim multi-replica readiness.
+
+### Completed acceptance
+
+| Requirement | Result / evidence |
+| --- | --- |
+| Register/login/logout/me/token endpoints | Complete: actual HTTP + PostgreSQL tests, no auto-login on registration; logout clears this browser session |
+| Customer-only registration/no privileged input | Complete: only email/password; unknown fields rejected; six privileged-field cases, normalized duplicates and concurrent duplicate constraints tested; creation/membership atomic |
+| Standard Identity password/normalization/lockout | Complete: standard hashing/validators; email as username, unique normalized username index; 5 failures/15 minutes, PostgreSQL row lock prevents lost increments across API hosts |
+| Cookies/HTTP status/roles | Complete: host-only Secure HttpOnly SameSite settings, 8-hour non-sliding session, API 401/403 without redirects, exact AdminOnly/CustomerOnly policies; Admin not implicitly Customer |
+| Explicit antiforgery | Complete: global unsafe MVC validation calls IAntiforgery; anonymous login/register and authenticated logout require paired cookie/token; invalid/unpaired/stale/missing tokens and refresh after identity changes tested |
+| Development account bootstrap | Complete: disabled by default, explicit Worker command, private required config, non-Development/disabled reject before persistence; no reset/promotion, rerun and weak-password rollback tested |
+| Authentication rate limits | Complete: per-IP/per-process fixed windows (20 writes/60 reads per minute), no queue, 429 + Retry-After; test proves separate hosts have separate quotas |
+| Local transport safeguards | Complete: HTTPS default; explicit Development HTTP exception has distinct cookie names; non-Development opt-in fails startup |
+| Error/log/security boundaries | Complete: existing stable ProblemDetails + trace; auth-specific codes documented, no payload/cookie/token logging; only classified duplicate username maps to validation, unknown infrastructure errors remain sanitized 500 |
+| A02 overall | Partial: auth portion complete; actual order ownership/cross-user SQL, full React/browser flows, signed callback isolation and shared-key deployment belong to later milestones |
+
+### Main flow / giải thích bằng tiếng Việt
+
+Client gọi GET antiforgery để nhận request token và cookie HttpOnly; POST phải gửi cả cookie lẫn X-CSRF-TOKEN. Filter toàn cục gọi cơ chế antiforgery chuẩn của ASP.NET Core trước action. Đăng ký chỉ nhận email/password, Identity kiểm tra và băm mật khẩu, transaction lưu user cùng vai trò Customer; server trả 201 nhưng chưa đăng nhập.
+
+Đăng nhập chuẩn hóa email, khóa dòng user trong PostgreSQL, gọi Identity kiểm tra mật khẩu và cập nhật bộ đếm lockout rồi commit. Cookie được phát sau transaction. Client lấy token antiforgery mới vì danh tính đã thay đổi, gọi /me để lấy vai trò có thẩm quyền từ server, rồi POST logout với token hiện tại để xóa cookie. Sai mật khẩu/tài khoản bị khóa trả cùng 401; thiếu vai trò trả 403. Admin seed chỉ chạy bằng lệnh Worker được bật rõ trong Development, không dùng mật khẩu mặc định và không nâng quyền tài khoản sẵn có.
+
+### Important files / migrations
+
+- API [BrowserAuth](../src/OrderFlow.Api/Auth/BrowserAuth.cs), [controller](../src/OrderFlow.Api/Auth/AuthController.cs), [session coordinator](../src/OrderFlow.Api/Auth/AuthSessionService.cs), [antiforgery filter](../src/OrderFlow.Api/Auth/BrowserAntiforgeryFilter.cs), token controller/transport filter/contracts, Program/HTTP middleware registration.
+- Application [IdentityPolicy](../src/OrderFlow.Application/Modules/Identity/IdentityPolicy.cs), [development seed](../src/OrderFlow.Application/Modules/Identity/DevelopmentAccountSeeder.cs), seed options and existing persistence registration. Worker explicit account command; both safe appsettings keep Enabled=false.
+- [HTTP/PostgreSQL auth tests](../tests/OrderFlow.IntegrationTests/Auth/AuthenticationTests.cs), configuration/composition tests, deterministic registration/login gates and test-only role probes; [seed guard unit tests](../tests/OrderFlow.UnitTests/DevelopmentAccountOptionsTests.cs). Existing persistence fixture users now provide unique emails required by Identity policy. Foundation probes alone explicitly opt out of CSRF; they never ship in the API.
+- [Authentication runbook](authentication.md), [ADR-010](adr/0010-identity-cookie-authentication.md), README, .env.example, spec/architecture/error/persistence/status documents.
+- **New database migrations: none.** Existing 20261102023642_InitialPersistence supports this feature. Integration tests migrate fresh disposable databases and verify no pending migrations/model drift.
+
+### Exact checks and results
+
+Tooling environment: DOTNET_CLI_HOME=/tmp/orderflow-m02/dotnet-home, DOTNET_CLI_TELEMETRY_OPTOUT=1, NUGET_PACKAGES=/tmp/orderflow-m02/packages, NUGET_HTTP_CACHE_PATH=/tmp/orderflow-m02/http-cache. Build/TRX/verification scripts/logs are under /tmp/orderflow-auth, outside the repository. PostgreSQL test connection is injected privately from the existing mode-0600 verification secret file; no credential value is printed or checked into source.
+
+1. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-auth/artifacts` — exit 0, five projects, existing pins/lockfiles retained; no dependency additions.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-auth/artifacts` — final exit 0, **0 warnings/errors**. Restricted execution initially exited 1 without diagnostics; running with permitted host execution succeeded. Initial antiforgery integration failures exposed MVC's missing view-filter registration under AddControllers; replaced that attribute with a small filter calling supported IAntiforgery directly. Two subsequent configuration tests exposed early configuration capture; final settings now resolve after all host configuration is applied, and startup validates the result.
+3. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-auth/artifacts --logger 'trx;LogFilePrefix=full' --results-directory /tmp/orderflow-auth/test-results` with private ORDERFLOW_TEST_POSTGRES — final exit 0, **48 unit + 80 integration/HTTP = 128 passed, 0 failed/skipped**. Final TRX: full_net10.0_20261102161029.trx and full_net10.0_20261102161035.trx. Of these, 30 require actual PostgreSQL (10 existing persistence + 20 new auth/config tests); 98 need no external service. Isolated auth composition test explicitly removes DB configuration and still gets token/401. Concurrency gates prove both participants reached validation/lock operations; no arbitrary sleeps establish races.
+4. `/tmp/orderflow-auth/verify-hosts.py` launches compiled API and worker DLLs from their Release output folders independently, without connection configuration. Real Kestrel loopback liveness 200, insecure token endpoint 400, anonymous /me 401, Production OpenAPI/test-only probes 404; each host handles SIGTERM and exits 0. Worker seed-development-account refuses Production even when enabled, and Development when disabled, before resolving persistence. No developer account was created by this launch check.
+5. PostgreSQL 18.6 verification Compose profile was restarted healthy using the existing temporary daemon override (the Snap daemon cannot bind this tool session's secret file). After tests, only verification container/network were stopped/removed with `down` **without --volumes**; named volume orderflow-m03-check_postgres_data is retained. No developer database/volume was reset.
+6. `git diff --check` and final repository inspection passed: 100 deliverable files, 123 valid local Markdown links, valid JSON/XML, balanced fenced blocks, no build output/private verification credential. No generated output, private cookie jar, real credential or new migration is included. No test run is claimed for React, actual browser HTTPS/proxy behavior, shared Data Protection replicas or production deployment.
+
+### Manual verification, remaining work and trade-offs
+
+Run README locked restore/build/test with private PostgreSQL settings; follow [authentication.md](authentication.md) for migration/roles, trusted local HTTPS or explicit loopback HTTP, account seeding, cookie-jar curl and browser fetch steps. Refresh the CSRF request token after login/logout. Confirm missing token gives 400, anonymous /me 401, privileged registration fields 400, correct login 200, valid logout 204. Production HTTP opt-in and seed command must refuse. No credentials are supplied in tracked examples.
+
+Trade-offs: login row locks serialize one account's attempts; limits are per process/IP, shared by NAT clients and multiplied by replicas. Generic login responses do not promise constant-time account lookup; duplicate registration does not hide account availability. Standard Identity's internal lockout uses its framework UTC wall clock (not an invented custom lockout implementation); application creation/ticket time uses injected TimeProvider. Existing-account seed mismatches fail rather than reset credentials. Logout clears this browser cookie, not immediate revocation of every copied ticket; stamps validate every five minutes. Local Data Protection ring durability/permissions remain operator responsibilities until 26 implements shared protected keys. No email verification/reset, MFA enrollment, role-management UI, distributed rate limiter, auth session store or new frontend is included.
+
+Next: 05 React skeleton/same-origin development proxy; 06 broader authorization conventions/regressions; 13 actual own-order predicates/cross-user 404; 17 signed callback isolation; 26 shared-key deployment hardening; 27 browser acceptance/redaction. Authentication completion does not mark these acceptance criteria complete.
+
+### Interview preparation
+
+1. **Vì sao cookie HttpOnly/SameSite vẫn cần CSRF token?** Hiểu cookie được browser gửi tự động; server phải xác minh cặp token trên thao tác thay đổi dữ liệu, kể cả login, và đổi token sau thay đổi danh tính.
+2. **Vì sao dùng Identity và khóa dòng PostgreSQL khi login?** Hiểu hashing/normalization/lockout của framework; hai tiến trình có thể ghi đè failed counter nếu không phối hợp ở DB; không dùng khóa trong process để chứng minh đúng trên nhiều replica.
+3. **Vai trò khác quyền sở hữu thế nào?** Hiểu Customer được server gán, Admin không tự là Customer; role policy bảo vệ endpoint, còn query theo owner mới ngăn lộ đơn của người khác. /me hay UI không thay thế server authorization.
+
+Before proceeding, be able to explain the cookie/token refresh flow, registration transaction, lockout serialization, development-only bootstrap and the remaining shared-key/per-process-limit boundaries.
+
+Suggested commit title: `feat: add Identity cookie authentication and antiforgery` (none was supplied; this is the proposed title). No commit was created.

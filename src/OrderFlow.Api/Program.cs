@@ -1,4 +1,6 @@
 using OrderFlow.Api.Http;
+using OrderFlow.Api.Auth;
+using Microsoft.AspNetCore.Identity;
 using OrderFlow.Application.Persistence;
 
 namespace OrderFlow.Api;
@@ -9,8 +11,11 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddHttpFoundations();
-        builder.Services.AddOrderFlowPersistence(builder.Configuration);
+        builder.Services.AddOrderFlowPersistence(builder.Configuration).AddSignInManager();
+        builder.Services.AddBrowserAuthentication();
         var app = builder.Build();
+        // Validate final configuration before accepting any requests, including in test hosts.
+        _ = app.Services.GetRequiredService<BrowserAuthSettings>();
         app.UseHttpFoundations();
 
         // Liveness describes this process only, not database or worker readiness.

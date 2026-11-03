@@ -20,7 +20,10 @@ Every foundation-generated HTTP error before a response starts uses `Content-Typ
 | HTTP | Stable code | Source / rule |
 | --- | --- | --- |
 | 400 | `validation_failed` | Model validation, malformed JSON/binding, invalid money/scale/range, pagination, or explicit application validation |
-| 401 | `unauthenticated` | Explicit unauthenticated response; future Identity challenge must return this status rather than redirect |
+| 400 | `antiforgery_failed` | Missing/invalid browser antiforgery cookie/request-token pair |
+| 400 | `https_required` | Auth endpoint requires HTTPS unless explicitly allowed in Development |
+| 401 | `invalid_credentials` | Generic failed login including unknown/locked account |
+| 401 | `unauthenticated` | Explicit unauthenticated response; Identity challenge returns this status rather than redirect |
 | 403 | `forbidden` | Endpoint-role/operation denial; not Customer ownership denial |
 | 404 | `not_found` | Absent resource **or not owned**; same generic title/body structure; also unmatched routes |
 | 405 | `method_not_allowed` | Unsupported method |
@@ -44,7 +47,7 @@ The fixed JSON error contract also applies when a caller requests HTML/text. Onc
 
 ## Ownership and future endpoint use
 
-Use owner-constrained database queries for Customer order/attempt/refund access. Missing and not-owned cases must both raise `ApplicationError.NotFound` without first returning existence/owner metadata. Use Forbidden for endpoint-role denial only; Admin access stays on explicit admin endpoints. This milestone implements the common safe mapping, not ownership queries or authentication; actual authorization/SQL tests remain mandatory when those features are added. Do not turn every Forbidden into NotFound globally.
+Use owner-constrained database queries for Customer order/attempt/refund access. Missing and not-owned cases must both raise `ApplicationError.NotFound` without first returning existence/owner metadata. Use Forbidden for endpoint-role denial only; Admin access stays on explicit admin endpoints. This milestone implements the common safe mapping, not ownership queries; milestone 04 now adds authentication; actual authorization/SQL tests remain mandatory when those features are added. Do not turn every Forbidden into NotFound globally.
 
 ## Correlation, logs and cancellation
 
@@ -119,3 +122,5 @@ curl -i -H 'Accept: text/html' http://127.0.0.1:5080/api/does-not-exist
 ```
 
 Set `DOTNET_ENVIRONMENT=Development` before starting to read `/openapi/v1.json`; Production returns the generic 404 for that route. Run solution tests to exercise validation/money/failure/cancellation probes; there is intentionally no production endpoint for forcing an exception or marking payment successful.
+
+Milestone 04 authentication endpoint examples, cookie/CSRF refresh steps, rate limits and development bootstrap are in [authentication.md](authentication.md). No roles/cookies/passwords or request tokens are included in application request logs.

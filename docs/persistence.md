@@ -1,6 +1,6 @@
 # PostgreSQL persistence — milestone 03
 
-One scoped OrderFlowDbContext contains Identity and the three durable reliability stores. No catalog/order/payment entities, auth endpoints, broker, dispatcher, lease-claim worker or automatic migration/seed exists. See [ADR-009](adr/0009-postgresql-reliability-foundations.md), [architecture](architecture.md), and [implementation status](implementation-status.md).
+One scoped OrderFlowDbContext contains Identity and the three durable reliability stores. No catalog/order/payment entities, broker, dispatcher, lease-claim worker or automatic migration/seed exists. Milestone 04 uses the existing Identity storage for [browser authentication and opt-in development accounts](authentication.md); no additional migration is needed. See [ADR-009](adr/0009-postgresql-reliability-foundations.md), [architecture](architecture.md), and [implementation status](implementation-status.md).
 
 ## Local PostgreSQL only
 
@@ -61,7 +61,7 @@ After applying migrations:
 DOTNET_ENVIRONMENT=Development dotnet run --project src/OrderFlow.Worker -c Release --no-build --no-restore --no-launch-profile -- seed-development
 ```
 
-This command creates only Admin/Customer **role definitions**, using stable IDs and PostgreSQL ON CONFLICT on normalized role name in one transaction. Repeated calls do not overwrite an existing role or assign it to users. It creates **no account, password, admin membership, catalog item or stock**. The command rejects non-Development environment and pending migrations. Normal worker invocation never seeds. Future Admin account provisioning is a separate authenticated/operator feature; no default credential is introduced here.
+This command creates only Admin/Customer **role definitions**, using stable IDs and PostgreSQL ON CONFLICT on normalized role name in one transaction. Repeated calls do not overwrite an existing role or assign it to users. It creates **no account, password, admin membership, catalog item or stock**. The command rejects non-Development environment and pending migrations. Normal worker invocation never seeds. Milestone 04 adds a separate explicitly enabled Development-only `seed-development-account` command using private configuration; see [authentication](authentication.md). This roles-only command still creates no account. Production provisioning remains an operator responsibility, with no default credential.
 
 ## Schemas and invariants
 

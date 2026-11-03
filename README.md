@@ -1,6 +1,6 @@
 # OrderFlow
 
-A portfolio modular monolith for ASP.NET Core / full-stack development. Current delivery: milestone 03, PostgreSQL persistence. Identity storage and shared idempotency/outbox/inbox tables use one scoped context and an initial migration. HTTP foundations/liveness remain; the worker has no background jobs and offers an explicit Development-only roles seed. CRUD, auth endpoints and broker publishing are not implemented yet.
+A portfolio modular monolith for ASP.NET Core / full-stack development. Current delivery: milestone 04, Identity cookie authentication with registration/login/logout/current-user, explicit antiforgery validation, role policies and authentication rate limits. PostgreSQL persistence and shared reliability tables remain; the worker has no background jobs and offers explicit Development-only role/account seeding. CRUD and broker publishing are not implemented yet.
 
 Read the [project contract](docs/project-spec.md), [architecture](docs/architecture.md), [ADRs](docs/adr/README.md), and [implementation status](docs/implementation-status.md) before adding features. Repository working rules are in [AGENTS.md](AGENTS.md).
 
@@ -25,7 +25,7 @@ dotnet build OrderFlow.slnx --configuration Release --no-restore
 dotnet test OrderFlow.slnx --configuration Release --no-build --no-restore
 ```
 
-The solution contains five projects. Current suite: 43 unit tests, 49 HTTP/composition tests and 10 PostgreSQL integration tests, **102 total**. PostgreSQL tests create/migrate/drop only their own uniquely named test database, never the configured dev database/volume; missing configuration fails clearly rather than using an in-memory fallback. SQL tests cover actual uniqueness/FKs/checks, immutable snapshots, shared commit/rollback, UTC/numeric conversion and scoped host/Identity storage. Auth/ownership/business behavior is not implemented or claimed. For the 92-test external-service-free subset, add `--filter 'Category!=PostgreSQL'`. Test-only controllers are explicitly registered in a test factory; the shipped API has no mutating probe endpoint.
+The solution contains five projects. Current suite: 48 unit tests, 50 external-service-free HTTP/composition tests and 30 PostgreSQL integration tests, **128 total**. PostgreSQL tests create/migrate/drop only their own uniquely named test database, never the configured dev database/volume; missing configuration fails clearly rather than using an in-memory fallback. SQL tests cover actual uniqueness/FKs/checks, immutable snapshots, shared commit/rollback, UTC/numeric conversion and scoped host/Identity storage. Auth tests cover cookie/CSRF flows, roles, lockout, development configuration/seeding and deterministic duplicate-registration/two-host login races. Order ownership/business behavior remains future work. For the 98-test external-service-free subset, add `--filter 'Category!=PostgreSQL'`. Test-only controllers are explicitly registered in a test factory; the shipped API has no mutating probe endpoint.
 
 Build outputs go to ignored `artifacts/`, separated by project/configuration. To keep even local generated output outside the repository, pass the same `--artifacts-path /tmp/orderflow-artifacts` to restore/build/test/run (choose a writable equivalent on Windows). Use the same configuration/output path across commands; `--no-build` must refer to previously built output.
 
@@ -43,13 +43,15 @@ In another terminal:
 curl --fail http://127.0.0.1:5080/api/health/live
 ```
 
+For browser authentication, follow the [authentication setup and curl/browser runbook](docs/authentication.md): default cookies require HTTPS; an explicit Development-only flag permits loopback HTTP with separate cookie names.
+
 Expected: HTTP 200 and `{"status":"Healthy"}`, with `X-Trace-Id`. This is process liveness only; no database/worker readiness is asserted. An unknown route returns sanitized ProblemDetails JSON. In Development, `/openapi/v1.json` exposes the generated OpenAPI 3.1 document; it returns generic 404 in Production. See [HTTP contract/examples](docs/http-contract.md) for status codes, input rules, ownership conventions and safe logs. Start the worker independently:
 
 ```bash
 dotnet run --project src/OrderFlow.Worker --configuration Release --no-build --no-restore --no-launch-profile
 ```
 
-Generic Host logs that the process started and waits. No jobs, polling loop, heartbeat simulation, or fake successful work are registered. Press Ctrl+C in each terminal for graceful shutdown; on Linux/container processes, SIGTERM is also handled by Generic Host. Neither host requires the other or a database connection to start. Resolving/using persistence requires the private connection setting. The separate `seed-development` command in the PostgreSQL guide is explicit and never runs during normal startup.
+Generic Host logs that the process started and waits. No jobs, polling loop, heartbeat simulation, or fake successful work are registered. Press Ctrl+C in each terminal for graceful shutdown; on Linux/container processes, SIGTERM is also handled by Generic Host. Neither host requires the other or a database connection to start. Resolving/using persistence requires the private connection setting. The separate `seed-development` (roles) and `seed-development-account` (opt-in local account) commands are explicit and never run during normal startup. See the authentication guide for private account configuration.
 
 ## Configuration and environment variables
 
@@ -65,6 +67,9 @@ Each host's tracked `appsettings.json` is safe sample configuration: log levels/
 | `Logging__LogLevel__Default` | Example nested setting override using `__` |
 | `ConnectionStrings__OrderFlow` | Private PostgreSQL connection for either host/tools; never commit or print it |
 | `ORDERFLOW_DB_PASSWORD_FILE`, `ORDERFLOW_DB_PORT` | Compose secret file and loopback port; see PostgreSQL guide |
+| `Authentication__AllowInsecureHttp` | Default false; explicit loopback HTTP exception in Development only, rejected elsewhere |
+| `DevelopmentSeed__Account__Enabled` | Default false; explicit Worker seed command only |
+| `DevelopmentSeed__Account__Email`, `DevelopmentSeed__Account__Password`, `DevelopmentSeed__Account__Role` | Private development account configuration; Admin or Customer; no default email/password |
 | `ORDERFLOW_TEST_POSTGRES` | Private test administrator connection; fixture owns separate databases |
 
 For a shared environment value, prefer `DOTNET_ENVIRONMENT`; avoid setting a conflicting `ASPNETCORE_ENVIRONMENT`. [.env.example](.env.example) demonstrates non-secret local values. .NET does **not** load `.env` automatically. On Bash, optionally copy the example to ignored `.env`, review it, and run:
@@ -75,7 +80,7 @@ source .env
 set +a
 ```
 
-Keep passwords, connection strings with credentials, signing keys and certificates in private environment variables or a proper secret store. Do not put secrets in command-line arguments, tracked appsettings, fixtures, logs, or the example file. Ignored local JSON is not loaded automatically either. No dotenv/secrets-loading package is added. Compose itself reads .env by Docker convention; .NET does not. HTTPS/reverse-proxy browser deployment remains a later milestone; local loopback HTTP proves host startup only.
+Keep passwords, connection strings with credentials, signing keys and certificates in private environment variables or a proper secret store. Do not put secrets in command-line arguments, tracked appsettings, fixtures, logs, or the example file. Ignored local JSON is not loaded automatically either. No dotenv/secrets-loading package is added. Compose itself reads .env by Docker convention; .NET does not. Default auth requires HTTPS; the documented development HTTP opt-in is local only. Same-origin proxy composition remains later work, and milestone 26 must implement shared protected Data Protection keys before multiple API replicas.
 
 If a restricted environment cannot write the normal .NET CLI home, set `DOTNET_CLI_HOME` to a writable directory and optionally set `DOTNET_CLI_TELEMETRY_OPTOUT=1`. If the global NuGet cache is read-only, set `NUGET_PACKAGES` to a writable cache. These are local tooling paths, not application settings; never change the system `HOME` variable to work around permissions.
 
@@ -95,7 +100,7 @@ tests/
   OrderFlow.IntegrationTests/ HTTP, PostgreSQL and host composition tests
 ```
 
-Application/Common contains BCL-only primitives. Persistence now contains OrderFlowDbContext/mappings/migrations, Modules/Identity contains ApplicationUser storage, and Messaging contains durable outbox/inbox records. Other modules remain future boundaries. Domain/application/infrastructure are folder boundaries inside that assembly, as ADR-001 chose; they are not additional production projects. API/Worker do not reference each other, and Application references neither host. See [ADR-009](docs/adr/0009-postgresql-reliability-foundations.md).
+Application/Common contains BCL-only primitives. Persistence now contains OrderFlowDbContext/mappings/migrations, Modules/Identity contains Identity policy/storage and explicit development bootstrap, and Messaging contains durable outbox/inbox records. Other modules remain future boundaries. Domain/application/infrastructure are folder boundaries inside that assembly, as ADR-001 chose; they are not additional production projects. API/Worker do not reference each other, and Application references neither host. See [ADR-009](docs/adr/0009-postgresql-reliability-foundations.md).
 
 ## Dependency changes
 
@@ -105,4 +110,4 @@ For an intentional package upgrade, edit central versions, run `dotnet restore O
 
 ## Next milestone and limits
 
-Milestone 03 completes persistence foundations, not command replay/publishing/lease processing. Per the latest request, auth endpoints are deferred to 04 (the prior React/Identity deliverables swap to 05/04). No auth endpoint/cookie middleware, readiness endpoint, catalog/inventory/order/payment/client behavior or job exists now. Full A01 includes the client/proxy later; A06/A16–A19 still need real use-case/dispatch/concurrency evidence beyond schema/transaction tests. Development owner privileges are not a production least-privilege deployment.
+Milestone 04 completes browser authentication; React scaffolding is next in 05. Read [ADR-010](docs/adr/0010-identity-cookie-authentication.md) for security choices and limits. No readiness endpoint, catalog/inventory/order/payment/client behavior or background job exists now. Shared reliability storage does not yet dispatch events or replay business commands. Full A01 includes the client/proxy later; A06/A16–A19 still need real use-case/dispatch/concurrency evidence beyond schema/transaction tests. Development owner privileges are not a production least-privilege deployment.

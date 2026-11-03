@@ -32,7 +32,7 @@ public static class HttpFoundations
             {
                 document.Info.Title = "OrderFlow API";
                 document.Info.Version = "v1";
-                document.Info.Description = "Process liveness and shared HTTP foundations. Errors use application/problem+json with code, traceId and errors. See docs/http-contract.md for status mappings. No CRUD/authentication is implemented.";
+                document.Info.Description = "Cookie-based browser authentication and HTTP foundations. Unsafe browser methods require the antiforgery cookie/token pair (X-CSRF-TOKEN). Errors use application/problem+json with code, traceId and errors. No catalog/order CRUD is implemented.";
                 return Task.CompletedTask;
             });
             options.AddSchemaTransformer((schema, context, _) =>
@@ -69,6 +69,10 @@ public static class HttpFoundations
                     ApiProblems.FromStatus(context, context.Response.StatusCode), context.RequestAborted);
             }
         });
+        app.UseRouting();
+        app.UseAuthentication();
+        app.UseRateLimiter();
+        app.UseAuthorization();
         app.MapControllers();
         if (app.Environment.IsDevelopment())
         {

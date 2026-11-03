@@ -9,15 +9,14 @@ namespace OrderFlow.Application.Persistence;
 
 public static class PersistenceRegistration
 {
-    public static IServiceCollection AddOrderFlowPersistence(this IServiceCollection services, IConfiguration configuration)
+    public static IdentityBuilder AddOrderFlowPersistence(this IServiceCollection services, IConfiguration configuration)
     {
         // Options are resolved lazily: liveness/startup do not connect to or migrate PostgreSQL.
         services.AddDbContext<OrderFlowDbContext>(options => Configure(options,
             configuration.GetConnectionString("OrderFlow")));
-        services.AddIdentityCore<ApplicationUser>()
+        return services.AddIdentityCore<ApplicationUser>(IdentityPolicy.Configure)
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<OrderFlowDbContext>();
-        return services;
     }
 
     public static void Configure(DbContextOptionsBuilder options, string? connectionString)
