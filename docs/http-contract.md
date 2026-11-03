@@ -47,7 +47,7 @@ The fixed JSON error contract also applies when a caller requests HTML/text. Onc
 
 ## Ownership and future endpoint use
 
-Use owner-constrained database queries for Customer order/attempt/refund access. Missing and not-owned cases must both raise `ApplicationError.NotFound` without first returning existence/owner metadata. Use Forbidden for endpoint-role denial only; Admin access stays on explicit admin endpoints. This milestone implements the common safe mapping, not ownership queries; milestone 04 now adds authentication; actual authorization/SQL tests remain mandatory when those features are added. Do not turn every Forbidden into NotFound globally.
+Use owner-constrained database queries for Customer order/attempt/refund access. Missing and not-owned cases must both raise `ApplicationError.NotFound` without first returning existence/owner metadata. Use Forbidden for endpoint-role denial only; Admin access stays on explicit admin endpoints. Milestone 06 implements resource policies, ICurrentUser and a scoped denial adapter; [authorization.md](authorization.md) defines the role/ownership/missing-resource matrix and later integration steps. Representative-resource authorization/HTTP tests pass; actual Order owner-constrained SQL and end-to-end tests remain mandatory in 13/19. Do not turn every Forbidden into NotFound globally.
 
 ## Correlation, logs and cancellation
 

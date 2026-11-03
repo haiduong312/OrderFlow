@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using OrderFlow.Api.Http;
+using OrderFlow.Api.Auth.Authorization;
 
 namespace OrderFlow.Api.Auth;
 
@@ -14,8 +15,6 @@ public sealed record BrowserAuthSettings(bool AllowInsecureHttp);
 
 public static class BrowserAuth
 {
-    public const string AdminPolicy = "AdminOnly";
-    public const string CustomerPolicy = "CustomerOnly";
     public const string WriteLimit = "auth-write";
     public const string ReadLimit = "auth-read";
     public const string CsrfHeader = "X-CSRF-TOKEN";
@@ -77,11 +76,7 @@ public static class BrowserAuth
         {
             options.Filters.Add(new ServiceFilterAttribute(typeof(BrowserAntiforgeryFilter)) { Order = 1000 });
         });
-        services.AddAuthorization(options =>
-        {
-            options.AddPolicy(AdminPolicy, policy => policy.RequireAuthenticatedUser().RequireRole("Admin"));
-            options.AddPolicy(CustomerPolicy, policy => policy.RequireAuthenticatedUser().RequireRole("Customer"));
-        });
+        services.AddResourceAuthorization();
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;

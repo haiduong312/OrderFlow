@@ -10,6 +10,7 @@ public static class ApiProblems
         var (status, code, title) = failure.Error switch
         {
             ApplicationError.ValidationFailed => (400, "validation_failed", "One or more fields are invalid."),
+            ApplicationError.Unauthenticated => (401, "unauthenticated", "Authentication is required."),
             ApplicationError.NotFound => (404, "not_found", "The requested resource was not found."),
             ApplicationError.Forbidden => (403, "forbidden", "This operation is not permitted."),
             ApplicationError.StateConflict => (409, "state_conflict", "The operation conflicts with the current state."),

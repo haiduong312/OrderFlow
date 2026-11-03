@@ -18,6 +18,7 @@ public class HttpFoundationTests
 {
     [Theory]
     [InlineData(ApplicationError.ValidationFailed, 400, "validation_failed")]
+    [InlineData(ApplicationError.Unauthenticated, 401, "unauthenticated")]
     [InlineData(ApplicationError.NotFound, 404, "not_found")]
     [InlineData(ApplicationError.Forbidden, 403, "forbidden")]
     [InlineData(ApplicationError.StateConflict, 409, "state_conflict")]

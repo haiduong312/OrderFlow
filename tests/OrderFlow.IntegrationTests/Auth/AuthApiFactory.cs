@@ -13,6 +13,7 @@ using OrderFlow.Application.Modules.Identity;
 using OrderFlow.Application.Persistence;
 using OrderFlow.IntegrationTests.Http;
 using OrderFlow.IntegrationTests.Persistence;
+using OrderFlow.IntegrationTests.Authorization;
 
 namespace OrderFlow.IntegrationTests.Auth;
 
@@ -35,6 +36,7 @@ public sealed class AuthApiFactory(PostgresDatabase database, string environment
         {
             services.AddDataProtection().UseEphemeralDataProtectionProvider();
             services.AddControllers().AddApplicationPart(typeof(AuthPolicyProbeController).Assembly);
+            services.AddSingleton<RepresentativeResourceStore>();
             if (registrationGate is not null)
             {
                 services.AddSingleton<IUserValidator<ApplicationUser>>(registrationGate);

@@ -10,5 +10,6 @@ public enum ApplicationError
     IdempotencyConflict,
     InsufficientStock,
     VersionConflict,
-    OrderExpired
+    OrderExpired,
+    Unauthenticated
 }

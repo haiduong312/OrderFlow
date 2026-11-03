@@ -30,5 +30,7 @@ public sealed class AuthCompositionTests
         Assert.Null(response.Headers.Location);
         using var probe = await client.GetAsync("/_tests/auth/admin");
         Assert.Equal(HttpStatusCode.NotFound, probe.StatusCode);
+        using var resourceProbe = await client.GetAsync("/_tests/resource-authorization/customer/" + Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.NotFound, resourceProbe.StatusCode);
     }
 }

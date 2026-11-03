@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-02 (Asia/Ho_Chi_Minh). Current milestone: **04 — Identity browser authentication**. Registration/login/logout/current-user, antiforgery, role policies, per-process rate limits and explicitly enabled Development-only account seeding are implemented/tested. No frontend, catalog/order/payment behavior or broker/lease processor exists yet. A02 remains partial for future order ownership/browser/shared-key deployment tests; A01/A03/A06/A08/A16–A19/A22 remain partial beyond the evidence below.
+Updated: 2026-11-03 (Asia/Ho_Chi_Minh). Current milestone: **06 — reusable resource authorization**. ICurrentUser, server-owned resource contract, Customer ownership/Admin handlers, explicit denial mapping and representative policy/HTTP tests are implemented. Milestone 05 React remains pending; 06 depends only on completed 04. No Order entity/endpoint, admin CRUD, frontend or background dispatcher exists. A02 remains partial for actual Order ownership SQL, browser flows and shared-key deployment; other unfinished criteria retain their feature milestones.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -34,7 +34,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 03 | PostgreSQL/Identity storage, reliability schema, initial migration, Compose and actual database tests | 02, 02a | A01, A16 | Complete: persistence foundations |
 | 04 | Customer browser auth endpoints/cookies, required CSRF and safe Admin bootstrap using existing Identity storage | 03 | A02 | Complete: auth foundation; ownership features remain later |
 | 05 | React/TypeScript skeleton; pinned client tooling, TanStack Query/Zustand, dev same-origin proxy | 02, 02a | A01 | Pending |
-| 06 | Authorization/ownership conventions, CSRF/auth regressions and HTTP test helpers | 04 | A02 | Pending |
+| 06 | Authorization/ownership contracts/policies/handlers, denial mapping and focused CSRF/auth/resource tests | 04 | A02 | Complete: representative-resource foundations; real Order integration remains 13/19 |
 | 07 | Catalog domain/admin CRUD/deactivation; exact money JSON, versions, product snapshots | 03, 06 | A03 | Pending |
 | 08 | Inventory balances/history schema, guarded adjustments and ledger constraints; reservation domain rules | 07 | A04, A07, A16 | Pending |
 | 09 | Admin stock HTTP endpoints, operation replay, stock races and constraint tests | 08 | A04 | Pending |
@@ -59,7 +59,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 28 | Operational backlog/failure view, health/lag metrics, audited same-identity operator replay and recovery runbook | 25, 26, 27 | A19, A22 | Pending |
 | 29 | Full acceptance walkthrough; portfolio architecture/demo/interview guide and verified limitations | 28 | A01–A24 | Pending |
 
-Feature order is intentional: HTTP idempotency/stock correctness precede payment; outbox/worker durability precede external intentions; auth/CSRF precede protected client flows; fault tests and operability precede the final demo. Reservation/order foreign keys are introduced together in 11; command-to-order links can be completed in 12 after both schemas exist. Reliability storage is now implemented in 03, ahead of its operation-specific use in 10/11/12 and dispatch in 14. Required CSRF protection ships with auth endpoints in 04; 06 extends authorization/regression coverage. Each feature milestone writes its relevant tests then; 26 does not defer concurrency proof. The latest instruction swaps the prior 04 React/05 Identity deliverables to 05/04; ADR-009 records that scope correction. The milestone-04 request additionally assigns shared Data Protection key implementation to 26; ADR-010 extends that milestone with deployment hardening while retaining its fault suite. Milestone 25 remains local composition.
+Feature order is intentional: HTTP idempotency/stock correctness precede payment; outbox/worker durability precede external intentions; auth/CSRF precede protected client flows; fault tests and operability precede the final demo. Reservation/order foreign keys are introduced together in 11; command-to-order links can be completed in 12 after both schemas exist. Reliability storage is now implemented in 03, ahead of its operation-specific use in 10/11/12 and dispatch in 14. Required CSRF protection ships with auth endpoints in 04; 06 extends authorization/regression coverage. Each feature milestone writes its relevant tests then; 26 does not defer concurrency proof. The latest instruction swaps the prior 04 React/05 Identity deliverables to 05/04; ADR-009 records that scope correction. The milestone-04 request additionally assigns shared Data Protection key implementation to 26; ADR-010 extends that milestone with deployment hardening while retaining its fault suite. Milestone 25 remains local composition. The next explicit request implements authorization milestone 06 before React 05; its dependency is 04, so no prerequisite or roadmap ID is skipped implicitly. ADR-011 records this delivery order.
 
 Requested supplemental milestone **02a** depends on 02 and is **Complete: shared HTTP/application foundations**. It establishes the common error/JSON/time/pagination conventions used by 03 and later HTTP features. IDs 01–29 and their business scopes are retained; 03 remains PostgreSQL work, not implicitly completed by this addition. ADR-008 records this roadmap adjustment and the clarified money input/output grammar.
 
@@ -379,3 +379,66 @@ Next: 05 React skeleton/same-origin development proxy; 06 broader authorization 
 Before proceeding, be able to explain the cookie/token refresh flow, registration transaction, lockout serialization, development-only bootstrap and the remaining shared-key/per-process-limit boundaries.
 
 Suggested commit title: `feat: add Identity cookie authentication and antiforgery` (none was supplied; this is the proposed title). No commit was created.
+
+## Milestone 06 — reusable resource authorization
+
+### Inspection and scope
+
+Read AGENTS.md, project spec, architecture, implementation status and relevant ADRs; inspected the existing auth/HTTP/application/test code, SDK/package pins/lockfiles, initial migration and clean Git status (`main...origin/main`) before edits. Existing Identity cookies, CSRF filters, role policy names and ProblemDetails handling were reused. The requested scope matches 06, which depends on completed 04; React 05 remains pending. No behavioral contradiction with the existing ownership contract was found.
+
+No Order entity/endpoint, production representative controller, CRUD, auth bypass, hard-coded identity, package or migration was introduced. Existing role policies now register in one authorization composition method; AdminOnly retains its name and uses the custom privilege handler. No commit/push/deployment/history rewrite or user-data reset occurred. No sub-agent was spawned.
+
+### Completed acceptance
+
+| Requirement | Result / evidence |
+| --- | --- |
+| Small application-facing caller identity | Complete: ICurrentUser exposes nullable Guid only; scoped HttpCurrentUser reads verified request identity, not headers/query/body, and returns null outside HTTP/for invalid IDs |
+| Server-derived ownership contract | Complete: IOwnedResource exposes stored OwnerId; handler requires authenticated Customer and exact matching ID; future resource DTOs must be server-loaded |
+| Policies/handlers for Customer/Admin | Complete: named CustomerOwnership policy and CustomerOwnershipHandler, AdminOnly/AdminAccessHandler, existing CustomerOnly endpoint gate; stateless handlers, no DbContext/network dependency |
+| Consistent anonymous/wrong-role/missing/non-owner behavior | Complete: 401 unauthenticated, 403 endpoint-role denial, 404 missing/not-owned Customer resource; Admin only on explicit admin path; dual-role users still obey Customer ownership |
+| Explicit safe HTTP mapping | Complete: scoped ResourceAccess invokes framework authorization, maps expected denials via ApplicationFailureException; explicit Unauthenticated enum mapping added; unknown infrastructure errors retain sanitized 500 |
+| Permission separate from domain rules | Complete: handlers inspect no business state; representative Admin HTTP request still requires CSRF and returns 409 when the independent closed-state guard rejects it |
+| Focused representative tests, no production fake endpoints | Complete: 14 policy/identity/access composition cases + 6 real-cookie PostgreSQL HTTP cases + 1 HTTP error-mapping regression; normal production factory returns 404 for test resource URLs |
+| A02 overall | Partial: foundation behavior proven; actual Order/list/payment/refund owner-constrained SQL, fulfillment/cancellation state tests, browser flows, callback isolation and shared-key deployment remain feature/deployment work |
+
+### Main flow / giải thích bằng tiếng Việt
+
+Application chỉ nhìn thấy ICurrentUser để lấy ID người dùng hiện tại, không đọc HttpContext hay nhận userId từ client làm căn cứ quyền. Với luồng Customer, endpoint kiểm tra role trước, application query resource theo ID và owner ID, rồi ResourceAccess gọi policy CustomerOwnership trên dữ liệu server đã tải. Handler kiểm tra danh tính hợp lệ, role Customer và OwnerId. Resource thiếu và resource của người khác đều trả cùng 404.
+
+Luồng admin dùng policy AdminOnly; quyền Admin không biến người dùng thành Customer và không bỏ qua ownership trên luồng Customer. Sau khi có quyền, application vẫn phải kiểm tra trạng thái/version/deadline/tồn kho trong unit of work tương ứng. Kiểm thử resource mẫu chứng minh Admin có quyền vẫn nhận 409 nếu quy tắc trạng thái từ chối. Hiện chưa có Order thật để query hay chuyển trạng thái.
+
+### Important files and migrations
+
+- Application [ICurrentUser](../src/OrderFlow.Application/Common/Authorization/ICurrentUser.cs), [IOwnedResource](../src/OrderFlow.Application/Common/Authorization/IOwnedResource.cs), and existing ApplicationError with explicit Unauthenticated value.
+- API [authorization registration/policy names](../src/OrderFlow.Api/Auth/Authorization/AuthorizationPolicies.cs), [ownership handler](../src/OrderFlow.Api/Auth/Authorization/CustomerOwnershipHandler.cs), [Admin handler](../src/OrderFlow.Api/Auth/Authorization/AdminAccessHandler.cs), [ResourceAccess](../src/OrderFlow.Api/Auth/Authorization/ResourceAccess.cs), HttpCurrentUser/UserIdentity; BrowserAuth delegates registration to these policies, ApiProblems adds the expected 401 mapping.
+- [Policy/identity tests](../tests/OrderFlow.IntegrationTests/Authorization/AuthorizationPolicyTests.cs), [HTTP tests](../tests/OrderFlow.IntegrationTests/Authorization/ResourceAuthorizationHttpTests.cs), test-only RepresentativeResourceStore/controller and existing auth factory/probes/composition/error tests.
+- [Authorization guide](authorization.md), [ADR-011](adr/0011-resource-authorization.md), README, spec/architecture/authentication/error/status docs.
+- **New database migrations: none.** Existing migration/model are unchanged; full persistence suite still verifies fresh migration/no model drift. SDK and all package/tool/lockfile versions remain unchanged.
+
+### Exact checks and results
+
+Used DOTNET_CLI_HOME=/tmp/orderflow-m02/dotnet-home, DOTNET_CLI_TELEMETRY_OPTOUT=1, NUGET_PACKAGES=/tmp/orderflow-m02/packages, NUGET_HTTP_CACHE_PATH=/tmp/orderflow-m02/http-cache. All new generated artifacts/TRX/scripts/logs are under /tmp/orderflow-authorization, outside the repository. Verification uses the existing private PostgreSQL secret file through environment variables, never printed/tracked. HTTP test users/passwords/IDs are generated per case.
+
+1. `dotnet --version` — 10.0.114. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-authorization/artifacts` — exit 0, all five projects. No dependency changes or audit bypass.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-authorization/artifacts` — exit 0, **0 warnings/errors**.
+3. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-authorization/artifacts --logger 'trx;LogFilePrefix=authorization' --results-directory /tmp/orderflow-authorization/test-results` with private ORDERFLOW_TEST_POSTGRES — exit 0, **48 unit + 101 integration/policy/HTTP = 149 passed, 0 failed/skipped**. TRX files authorization_net10.0_20261103160708.trx and authorization_net10.0_20261103160718.trx. There are 36 actual PostgreSQL cases and 113 external-service-free cases. The six new HTTP cases use real PostgreSQL Identity storage + production login/cookie/CSRF, with no test auth scheme. Only representative resource data is a test dictionary; this is not Order SQL evidence.
+4. PostgreSQL 18.6 Compose verification profile started with `up -d --wait --wait-timeout 90`, healthy. Same existing Snap daemon workaround as milestones 03/04: verification-only override under /tmp because the daemon cannot bind this tool session's secret file. After tests, `down` exited 0 and removed only the verification container/network without --volumes; volume inspection confirmed orderflow-m03-check_postgres_data is retained. Tests create/drop only their uniquely named fixture database; developer DB/volume is not reset.
+5. Final `git diff --check` and repository checks passed: 113 deliverable files, 148 valid local Markdown links, valid JSON/XML, balanced fences, unchanged roadmap IDs 01–29 and no generated output/private verification credential. No actual browser/proxy/shared-key deployment or real Order ownership SQL/transaction test is claimed. Existing composition tests still cover API liveness and separate worker startup without external services; no additional host feature requires another manual launch.
+
+### Manual verification, trade-offs and remaining work
+
+Follow [authorization.md](authorization.md): after locked restore/build and private PostgreSQL configuration, run `dotnet test tests/OrderFlow.IntegrationTests -c Release --no-build --no-restore --filter 'FullyQualifiedName~AuthorizationPolicyTests'` for focused no-service policy cases, or filter `FullyQualifiedName~ResourceAuthorizationHttpTests` for cookie/PostgreSQL behavior. Add the matching --artifacts-path if using an external build output. Run the normal API and request /_tests/resource-authorization/customer/{generated-uuid}; it must be 404, since test controllers are not shipped. There is no fake production Order endpoint to exercise manually. Existing auth cookie/CSRF curl/browser instructions remain valid.
+
+Trade-offs: explicit imperative resource authorization requires later callers to load trusted resources and invoke the guard; it is not an automatic database filter. The v1 identity contract accepts one authenticated Identity identity with one nonempty user UUID; ambiguous/malformed claims fail closed, and no HTTP context means no caller ID. Resource ownership requirements remain independent of Admin permission and domain transition rules. Role/cookie security-stamp freshness retains milestone-04 behavior. IAuthorizationService has no CancellationToken API; the adapter checks cancellation around its in-memory evaluation, and later queries must propagate cancellation themselves.
+
+Remaining integration is explicit: 13 must implement owner-constrained Order/payment/refund reads/list/cancel queries and real cross-user HTTP/SQL evidence; 19 must integrate Admin access with actual fulfillment state/version rules; 17/26/27 retain signed callback/shared-key/browser tests. 05 React is still pending. No A02 completion is claimed beyond representative-resource foundations.
+
+### Interview preparation
+
+1. **Vì sao Authorize attribute chưa đủ cho ownership?** Nó chạy trước lúc tải entity; role gate đi trước query, còn ownership handler cần resource server đã tải và query phải lọc owner.
+2. **Vì sao non-owner trả 404, sai role trả 403?** Hiểu phân biệt quyền vào endpoint với sự tồn tại của resource; không để Customer dò đơn người khác và không đổi mọi 403 thành 404.
+3. **Admin có quyền thì vì sao vẫn nhận 409?** Authorization trả lời có được thao tác hay không; state machine/version/deadline và transaction mới quyết định thao tác hiện tại có hợp lệ hay không.
+
+Before proceeding, explain where the trusted caller/resource IDs originate, how query predicates and handlers work together, why Admin does not bypass Customer ownership, and which actual Order integrations/tests still remain.
+
+Suggested commit title: `feat: add reusable resource authorization policies` (none was supplied; this is the proposed title). No commit was created.

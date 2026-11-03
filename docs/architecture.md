@@ -1,6 +1,6 @@
 # OrderFlow architecture
 
-Status: accepted design. Milestones 02/02a/03/04 implement host/HTTP/persistence foundations and browser Identity authentication; catalog/order/payment/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
+Status: accepted design. Milestones 02/02a/03/04/06 implement host/HTTP/persistence, Identity authentication and resource authorization foundations; catalog/order/payment/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
 
 ## 1. Deployment and code organization
 
@@ -44,6 +44,8 @@ Milestone 02a adds BCL-only Application/Common primitives for errors/money/time/
 Milestone 03 adds the scoped OrderFlowDbContext, explicit Identity storage, IdempotencyRecords/OutboxMessages/ProcessedMessages and initial migration. Connection options are lazy; both hosts can start without connecting and never migrate automatically. An explicit Development-only worker command seeds role definitions; milestone 04 adds a separately enabled account seed command without default credentials or existing-account promotion/reset. [Persistence guide](persistence.md) documents private configuration, separate migration execution, actual PostgreSQL tests, volume lifetime and manual reset. [ADR-009](adr/0009-postgresql-reliability-foundations.md) records the generalized stores and auth/client roadmap adjustment.
 
 Milestone 04 adds API/Auth session orchestration, role policies, secure cookie settings, explicit JSON antiforgery validation and per-process authentication limits. Shared Identity policy/account bootstrap lives in Application/Modules/Identity; [ADR-010](adr/0010-identity-cookie-authentication.md) records the choices. No new schema/package is needed.
+
+Milestone 06 adds ICurrentUser/IOwnedResource contracts in Application/Common/Authorization and ASP.NET Core policies/handlers in API/Auth/Authorization. Scoped ResourceAccess maps explicit permission failures to the existing HTTP contract. Owner queries and domain transition rules still belong to later application features; [ADR-011](adr/0011-resource-authorization.md) and the [authorization guide](authorization.md) define this boundary.
 
 ## 2. Platform and version policy
 
