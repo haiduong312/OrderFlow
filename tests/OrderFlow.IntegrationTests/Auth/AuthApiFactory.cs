@@ -18,7 +18,8 @@ using OrderFlow.IntegrationTests.Authorization;
 namespace OrderFlow.IntegrationTests.Auth;
 
 public sealed class AuthApiFactory(PostgresDatabase database, string environment = "Production", bool allowHttp = false,
-    RegistrationGate? registrationGate = null, LoginGate? loginGate = null) : WebApplicationFactory<Api.Program>
+    RegistrationGate? registrationGate = null, LoginGate? loginGate = null,
+    DbCommandInterceptor? catalogInterceptor = null) : WebApplicationFactory<Api.Program>
 {
     public CapturingLoggerProvider Logs { get; } = new();
 
@@ -45,6 +46,10 @@ public sealed class AuthApiFactory(PostgresDatabase database, string environment
             if (loginGate is not null)
             {
                 services.AddDbContext<OrderFlowDbContext>(options => options.AddInterceptors(loginGate));
+            }
+            if (catalogInterceptor is not null)
+            {
+                services.AddDbContext<OrderFlowDbContext>(options => options.AddInterceptors(catalogInterceptor));
             }
         });
     }

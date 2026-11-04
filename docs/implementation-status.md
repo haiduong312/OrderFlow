@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-03 (Asia/Ho_Chi_Minh). Current milestone: **06 — reusable resource authorization**. ICurrentUser, server-owned resource contract, Customer ownership/Admin handlers, explicit denial mapping and representative policy/HTTP tests are implemented. Milestone 05 React remains pending; 06 depends only on completed 04. No Order entity/endpoint, admin CRUD, frontend or background dispatcher exists. A02 remains partial for actual Order ownership SQL, browser flows and shared-key deployment; other unfinished criteria retain their feature milestones.
+Updated: 2026-11-03 (Asia/Ho_Chi_Minh). Current milestone: **07 — Products/Categories Catalog**. Domain rules, shared PostgreSQL mappings/AddCatalog migration, Admin create/update/archive and public read/search/pagination DTO endpoints are implemented/tested. Inventory/Orders/payment/client/broker behavior remains future work. A03 is complete for the Catalog slice but still partial for Order snapshots/totals/client math; A02 remains partial beyond current authorization evidence. Milestone 05 React remains pending.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -35,7 +35,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 04 | Customer browser auth endpoints/cookies, required CSRF and safe Admin bootstrap using existing Identity storage | 03 | A02 | Complete: auth foundation; ownership features remain later |
 | 05 | React/TypeScript skeleton; pinned client tooling, TanStack Query/Zustand, dev same-origin proxy | 02, 02a | A01 | Pending |
 | 06 | Authorization/ownership contracts/policies/handlers, denial mapping and focused CSRF/auth/resource tests | 04 | A02 | Complete: representative-resource foundations; real Order integration remains 13/19 |
-| 07 | Catalog domain/admin CRUD/deactivation; exact money JSON, versions, product snapshots | 03, 06 | A03 | Pending |
+| 07 | Products/Categories domain/schema, Admin create/update/archive, public read/search/paging, exact prices and concurrency | 03, 06 | A03 | Complete: Catalog slice; Order snapshots/totals remain 11/12 |
 | 08 | Inventory balances/history schema, guarded adjustments and ledger constraints; reservation domain rules | 07 | A04, A07, A16 | Pending |
 | 09 | Admin stock HTTP endpoints, operation replay, stock races and constraint tests | 08 | A04 | Pending |
 | 10 | Operation-specific normalization, replay/conflict protocol using the shared idempotency store | 03, 06 | A06 | Pending |
@@ -442,3 +442,70 @@ Remaining integration is explicit: 13 must implement owner-constrained Order/pay
 Before proceeding, explain where the trusted caller/resource IDs originate, how query predicates and handlers work together, why Admin does not bypass Customer ownership, and which actual Order integrations/tests still remain.
 
 Suggested commit title: `feat: add reusable resource authorization policies` (none was supplied; this is the proposed title). No commit was created.
+
+## Milestone 07 — Products and Categories Catalog
+
+### Inspection, scope and decisions
+
+Read AGENTS.md, project spec, architecture/status and relevant ADRs; inspected clean Git status (`main...origin/main`), current Identity/resource authorization/HTTP/money/paging primitives, EF context/migration/model snapshot, tests and all pinned SDK/package/tool versions before editing. Reused those foundations and extracted the existing real-cookie authenticated-browser test helper for reuse. No dependency/SDK version change, generic repository, cache/upload/provider or premature Inventory/Order model was added. No commit/push/deployment/history rewrite or user-data reset occurred; no sub-agent was spawned.
+
+Reported scope clarifications before dependent behavior: Categories are new to the original product-only contract; advisory inventory summaries/zero-stock initialization remain 08/09, so this Catalog API returns no fake inventory field. ADR-012 fixes one category per product, non-unique bounded category labels, category-based public visibility, archive/restore/version semantics and literal substring search. Categories introduce a lock level before Product writes; architecture now records that order for future checkout integration. Existing snapshots/payments are not invalidated by catalog archival; actual Order entities/tests remain later work.
+
+### Completed acceptance
+
+| Requirement | Result / evidence |
+| --- | --- |
+| Product/Category domain and schema | Complete: server-generated stable UUIDs; required bounded/trimmed names; immutable normalized ASCII SKU; positive numeric(18,2) USD price; required restrictive Category FK; active flags, UTC microsecond CreatedAt and concurrency versions |
+| Admin create/update/archive | Complete: explicit typed endpoints/requests, Admin policy + global CSRF, expectedVersion, 201 Location, version/unique/state conflicts; no DELETE or inventory input accepted |
+| Public/customer read/search | Complete: active Product AND active Category visibility; public categories active even empty; admin can read archived/hidden rows; no caller-supplied admin flag |
+| Archive decisions | Complete: category archive hides children without rewriting their own active/version state; restore preserves individual product archives; SKU stays reserved; current-version archive repeat is a conditional no-op |
+| Filtering/pagination/sorting | Complete: literal escaped ILIKE name/SKU search, categoryId filter, 1–100 page size/default 20/offset bounds, empty past-end pages, filtered counts and unique Id tie-breakers for every allowlisted sort |
+| Read-query behavior | Complete: no-tracking SQL DTO projection; count/page awaited sequentially with CancellationToken; no unbounded list endpoint or concurrent DbContext use |
+| Coordination/index claims | Complete: PostgreSQL unique SKU; EF version guards; category row lock/fresh state for product writes; no claim B-tree accelerates leading-wildcard substring queries; index/schema inspection and two deterministic HTTP races passed |
+| DTOs/money/OpenAPI | Complete: price strings/currency USD, ordinary integers remain numeric; positive Catalog schema separate from shared zero-allowed money, required non-null update schema, actual typed paths/responses/errors; no class Produces filter changes ProblemDetails content type |
+| A03 overall | Partial beyond Catalog: Order line snapshots, totals/overflow and exact frontend arithmetic remain 11/12/20/21 |
+
+### Main flow / giải thích bằng tiếng Việt
+
+Request admin đi qua cookie authentication, policy Admin và CSRF trước controller. Controller gọi CatalogService; domain chuẩn hóa SKU/kiểm tra tên/giá/version. Product create/update mở transaction, khóa Category trong PostgreSQL, đọc trạng thái mới nhất rồi ghi Product; unique SKU và điều kiện Version trong SQL xử lý tranh chấp giữa các request. Lỗi SKU trùng hoặc version cũ trả 409, lỗi input trả 400, lỗi hạ tầng không xác định vẫn trả 500 an toàn.
+
+Luồng đọc lọc Product.IsActive và Category.IsActive ở SQL, thêm keyword/category filter, đếm và lấy trang theo sort có Id làm tie-breaker, rồi project DTO không tracking. Giá được serialize thành chuỗi USD. Archive Category chỉ đổi Category; sản phẩm vẫn được giữ cho admin và tương lai Order tham chiếu, nhưng biến mất khỏi API công khai. Khôi phục Category không tự khôi phục Product đã archive riêng.
+
+### Important files and migration
+
+- Application Modules/Catalog: [Product](../src/OrderFlow.Application/Modules/Catalog/Product.cs), [Category](../src/OrderFlow.Application/Modules/Catalog/Category.cs), CatalogRules, [CatalogService](../src/OrderFlow.Application/Modules/Catalog/CatalogService.cs), explicit request/response/query DTOs.
+- Persistence [CatalogConfiguration](../src/OrderFlow.Application/Persistence/CatalogConfiguration.cs), shared context additions and **[20261103093358_AddCatalog](../src/OrderFlow.Application/Persistence/Migrations/20261103093358_AddCatalog.cs)** with generated designer/model snapshot. Creates catalog.Categories/Products only; Up adds schema/tables/indexes/FK/checks, no existing-data rewrite. Down is destructive to Catalog data and was not run.
+- API [public controller](../src/OrderFlow.Api/Catalog/PublicCatalogController.cs), AdminProducts/AdminCategories controllers, CatalogRegistration/OpenAPI; existing ApiProblems adds sku_conflict, Program composes the feature.
+- Tests [Catalog HTTP](../tests/OrderFlow.IntegrationTests/Catalog/CatalogHttpTests.cs), read/OpenAPI, constraints/mapping, concurrency gates, [domain tests](../tests/OrderFlow.UnitTests/CatalogDomainTests.cs); reusable AuthenticatedBrowser helper and adapted migration-count/HTTP error mapping checks.
+- [Catalog runbook](catalog.md), [ADR-012](adr/0012-catalog-products-categories.md), README/spec/architecture/persistence/error/status/module docs.
+
+### Exact checks and results
+
+Tooling: DOTNET_CLI_HOME=/tmp/orderflow-m02/dotnet-home, DOTNET_CLI_TELEMETRY_OPTOUT=1, NUGET_PACKAGES=/tmp/orderflow-m02/packages, NUGET_HTTP_CACHE_PATH=/tmp/orderflow-m02/http-cache. All generated verification output is under /tmp/orderflow-catalog. PostgreSQL credentials are read privately from the existing mode-0600 file and passed through environment; no real credentials/cookies/config are printed/tracked. SDK remains 10.0.114, ASP.NET/EF/Identity/tool 10.0.14, Npgsql 10.0.3. Official Npgsql translations, EF concurrency and ASP.NET OpenAPI APIs were consulted.
+
+1. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-catalog/artifacts` — exit 0, all five projects, existing package pins/lockfiles unchanged.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-catalog/artifacts` — final exit 0, **0 warnings/errors**.
+3. `dotnet ef migrations add AddCatalog --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output-dir Persistence/Migrations` — exit 0, generated/reviewed additive migration. EF commands set ArtifactsPath=/tmp/orderflow-catalog/artifacts to match build/metadata paths.
+4. `dotnet ef database update --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` — exit 0 on existing verification DB, applies AddCatalog and preserves Identity/reliability data; repeated command exit 0/no migration. `dotnet ef migrations has-pending-model-changes` with same flags — exit 0/no changes. `dotnet ef migrations script --idempotent --output /tmp/orderflow-catalog/migration.sql` with same flags — exit 0. The test fixture also migrates a fresh isolated DB through both migrations, checks no pending migration/model drift and drops only its generated DB.
+5. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-catalog/artifacts --logger 'trx;LogFilePrefix=catalog' --results-directory /tmp/orderflow-catalog/test-results` with private ORDERFLOW_TEST_POSTGRES — final exit 0: **57 unit + 135 integration/HTTP = 192 passed, 0 failed/skipped**. Final TRX catalog_net10.0_20261103164955.trx and catalog_net10.0_20261103165008.trx. There are 69 PostgreSQL cases (33 new Catalog) and 123 external-service-free cases. SKU and version races each prove two independent request DbContexts reached the contested insert/lock gate; no sleeps. No EF InMemory or custom test-auth scheme.
+6. Initial tests exposed class-level Produces application/json overriding validation ProblemDetails content types, raw PostgreSQL RESTRICT's 23001 code (not 23503), and nullable/reference OpenAPI money/currency fields. Fixed those contracts/expectations; final tests verify safe errors, positive string money, non-null required update metadata and fixed USD response. These failures were not reported as passing.
+7. `/tmp/orderflow-catalog/read-openapi.py` independently launches compiled API on Kestrel loopback in Development, reads generated OpenAPI and public products/categories pages using private verification DB configuration, then SIGTERM exit 0. No catalog/user data is created by this smoke check. Existing composition tests continue to cover separate worker startup; no worker job was added.
+8. PostgreSQL verification Compose starts healthy with the existing /tmp daemon override needed because Snap cannot bind this tool session's secret file. Final read-only counts were users=0, roles=2, products=0, categories=0, migrations=2, confirming no catalog/account seed was introduced into the verification DB. Cleanup down exited 0 without --volumes, and volume inspection confirmed orderflow-m03-check_postgres_data is retained. Final git diff --check and repository checks passed: 133 deliverable files, 176 valid local Markdown links, valid JSON/XML/balanced fences, preserved roadmap IDs and unchanged package/SDK/lockfile graph; no generated output or private verification credential in deliverables. No developer data reset or production deployment was performed.
+
+### Manual steps, trade-offs and remaining work
+
+Use README locked restore/build, then the dedicated migration command in [persistence](persistence.md). Follow [Catalog manual walkthrough](catalog.md): explicit Development Admin setup, cookie jar + fresh CSRF token; create Category then Product; search/filter/page publicly; edit using returned version; repeat stale version for 409; archive/restore and compare public 404/admin 200; duplicate archived SKU still 409; non-admin/missing CSRF/inventory fields must fail. Sample data is created only when you explicitly run that walkthrough; no automatic seed/reset exists.
+
+Trade-offs: leading-wildcard ILIKE may scan/sort and has no arbitrary-substring B-tree performance claim; no large-data benchmark/pg_trgm index is implemented. Count/page and offset navigation can drift under concurrent writes; unique tie-breakers make unchanged data deterministic. Category archive affects public visibility without changing child versions, requiring future client invalidation. Category row locks constrain throughput for one category. Raw SQL numeric typemod may coerce scale; API/domain reject it before SQL. Existing Admin cookie freshness/shared-key limits remain as documented in 04/26.
+
+Remaining: Inventory balances/default-zero initialization/advisory counts in 08/09, actual Order snapshots/checkout eligibility/locks in 11/12, frontend catalog/cents state in 20, image/upload/cache only when requested, production runtime DB privileges/shared keys/performance/browser acceptance later. Catalog adds no fake stock and proves no nonexistent Order FK/snapshot behavior. A03/A01/A02 completion remains limited to actual evidence.
+
+### Interview preparation
+
+1. **Vì sao unique SKU và expectedVersion giải quyết hai vấn đề khác nhau?** Unique index chặn hai lần tạo cùng danh tính SKU; version predicate chặn ghi đè bản sửa đã thay đổi, kể cả nhiều API process.
+2. **ILIKE '%text%' có dùng B-tree thông thường để tăng tốc không?** Hiểu literal escaping, leading wildcard, scan/sort và lý do phải đo query plan trước khi thêm pg_trgm/GIN.
+3. **Archive Category ảnh hưởng Product và Order thế nào?** Hiểu visibility bằng hai active flags, không xóa/đổi child state; Order tương lai phải giữ FK/snapshot và checkout phải revalidate dưới locks, không tin catalog UI.
+
+Before proceeding, explain the controller → domain/transaction → DTO flow, category/product lock order, filtered paging/tie-breakers, archival visibility and which inventory/order guarantees are still absent.
+
+Suggested commit title: `feat: add product and category catalog` (none was supplied; this is the proposed title). No commit was created.

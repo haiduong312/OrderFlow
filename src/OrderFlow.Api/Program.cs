@@ -2,6 +2,7 @@ using OrderFlow.Api.Http;
 using OrderFlow.Api.Auth;
 using Microsoft.AspNetCore.Identity;
 using OrderFlow.Application.Persistence;
+using OrderFlow.Api.Catalog;
 
 namespace OrderFlow.Api;
 
@@ -13,6 +14,7 @@ public class Program
         builder.Services.AddHttpFoundations();
         builder.Services.AddOrderFlowPersistence(builder.Configuration).AddSignInManager();
         builder.Services.AddBrowserAuthentication();
+        builder.Services.AddCatalog();
         var app = builder.Build();
         // Validate final configuration before accepting any requests, including in test hosts.
         _ = app.Services.GetRequiredService<BrowserAuthSettings>();

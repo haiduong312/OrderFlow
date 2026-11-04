@@ -330,6 +330,108 @@ namespace OrderFlow.Application.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("OrderFlow.Application.Modules.Catalog.Category", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt", "Id")
+                        .IsDescending()
+                        .HasDatabaseName("IX_Categories_CreatedAt_Id");
+
+                    b.ToTable("Categories", "catalog", t =>
+                        {
+                            t.HasCheckConstraint("CK_Categories_CreatedAt", "isfinite(\"CreatedAt\")");
+
+                            t.HasCheckConstraint("CK_Categories_Name", "length(btrim(\"Name\")) > 0");
+
+                            t.HasCheckConstraint("CK_Categories_Version", "\"Version\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Catalog.Product", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<decimal>("Price")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("Sku")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .UseCollation("C");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Sku")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Products_Sku");
+
+                    b.HasIndex("CreatedAt", "Id")
+                        .IsDescending()
+                        .HasDatabaseName("IX_Products_CreatedAt_Id");
+
+                    b.HasIndex("CategoryId", "CreatedAt", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("IX_Products_Category_CreatedAt_Id");
+
+                    b.ToTable("Products", "catalog", t =>
+                        {
+                            t.HasCheckConstraint("CK_Products_CreatedAt", "isfinite(\"CreatedAt\")");
+
+                            t.HasCheckConstraint("CK_Products_Name", "length(btrim(\"Name\")) > 0");
+
+                            t.HasCheckConstraint("CK_Products_Price", "\"Price\" > 0 AND \"Price\" <= 9999999999999999.99");
+
+                            t.HasCheckConstraint("CK_Products_Sku", "\"Sku\" ~ '^[A-Z0-9-]{1,64}$'");
+
+                            t.HasCheckConstraint("CK_Products_Version", "\"Version\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("OrderFlow.Application.Modules.Identity.ApplicationUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -522,6 +624,17 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Catalog.Product", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Modules.Catalog.Category", "Category")
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Category");
                 });
 
             modelBuilder.Entity("OrderFlow.Application.Persistence.IdempotencyRecord", b =>

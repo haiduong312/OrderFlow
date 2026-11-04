@@ -26,7 +26,7 @@ Milestone 03 implements shared PostgreSQL/Identity storage; milestone 04 adds br
 
 Registration never accepts roles. Provision the initial Admin through an explicit operator bootstrap using external secrets; no default password or public role-assignment endpoint. Authorization checks run on the server and constrain database queries. Customer access to another user's order, attempt, or refund returns 404; missing authentication returns 401; missing endpoint role returns 403. Admin access uses explicit `/admin` endpoints and does not bypass Customer endpoint ownership checks. An Admin is not implicitly a Customer. Milestone 06 supplies reusable policies/handlers and ICurrentUser; [authorization.md](authorization.md) defines the implemented denial matrix and integration obligations. Orders/admin features must still integrate owner-constrained queries and actual business rules.
 
-Catalog products have immutable normalized SKU, name, description, USD price, active flag, and an optimistic version. Normalize SKU with trim and uppercase invariant ASCII; accept 1–64 characters `[A-Z0-9-]`. Names are trimmed, nonempty, at most 200 characters; descriptions at most 2,000. Products are deactivated, not deleted. Historical order lines snapshot product ID, SKU, name, unit price, and quantity. Later price/name/deactivation changes do not alter existing orders or prevent payment for an already reserved order.
+Catalog products have immutable normalized SKU, name, description, USD price, active flag, and an optimistic version. Normalize SKU with trim and uppercase invariant ASCII; accept 1–64 characters `[A-Z0-9-]`. Names are trimmed, nonempty, at most 200 characters; descriptions at most 2,000. Products are deactivated, not deleted. Milestone 07 adds one required Category per Product; category names are bounded display labels (not unique keys), with stable UUID, active flag and version. Public visibility requires both Product and Category active. Category archival hides its products without changing their individual active/version flags; restore reveals only individually active products. Admin sees all; product content writes require an active target category, and archives never delete rows. SKU remains reserved after archival. [Catalog guide](catalog.md) and [ADR-012](adr/0012-catalog-products-categories.md) define the implemented routes, literal substring search, sorting and concurrency. Historical order lines snapshot product ID, SKU, name, unit price, and quantity. Later price/name/deactivation changes do not alter existing orders or prevent payment for an already reserved order.
 
 Fulfillment is a demonstration of status changes only. v1 does not collect shipping addresses, charge shipping fees, or call a carrier. Cart data is an estimate and is not an inventory reservation. No guest checkout.
 
@@ -118,11 +118,19 @@ All paths below are under `/api`. Browser POST/PUT/PATCH/DELETE endpoints, inclu
 | POST `/auth/logout` | Authenticated + CSRF | 204; clear session |
 | GET `/auth/me` | Authenticated | 200 user ID and roles; no password/security stamp |
 | GET `/products` | Anonymous | Active products, bounded pagination, name/SKU search |
-| GET `/products/{id}` | Anonymous | Active product and advisory available count; inactive/absent 404 |
-| GET `/admin/products` | Admin | Active/inactive catalog, version and stock summary |
-| GET `/admin/products/{id}` | Admin | Current product, version and stock |
-| POST `/admin/products` | Admin + CSRF | SKU/name/description/price; 201, active product with zero stock |
-| PUT `/admin/products/{id}` | Admin + CSRF | Name/description/price/active + expectedVersion; 200; SKU immutable |
+| GET `/products/{id}` | Anonymous | Active product in active category; inactive/absent 404; advisory inventory count deferred to 08/09 |
+| GET `/admin/products` | Admin | Active/inactive catalog, version; stock summary deferred to 08/09 |
+| GET `/admin/products/{id}` | Admin | Current product/category activity and version; stock deferred to 08/09 |
+| POST `/admin/products` | Admin + CSRF | SKU/name/description/price/categoryId; 201 active product; Inventory initialization deferred to 08 |
+| PUT `/admin/products/{id}` | Admin + CSRF | Name/description/price/categoryId/isActive + expectedVersion; 200; SKU immutable |
+| POST `/admin/products/{id}/archive` | Admin + CSRF | expectedVersion; 200 archived representation; current-version repeat is a no-op |
+| GET `/categories` | Anonymous | Active categories, bounded pagination and literal name search |
+| GET `/categories/{id}` | Anonymous | Active category; archived/absent 404 |
+| GET `/admin/categories` | Admin | Active/archived categories, bounded pagination/search |
+| GET `/admin/categories/{id}` | Admin | Category/activity/version |
+| POST `/admin/categories` | Admin + CSRF | Name; 201 active category |
+| PUT `/admin/categories/{id}` | Admin + CSRF | Name/isActive/expectedVersion; 200 |
+| POST `/admin/categories/{id}/archive` | Admin + CSRF | expectedVersion; 200; hides products without rewriting them |
 | POST `/admin/products/{id}/stock-adjustments` | Admin + CSRF | operationId UUID, delta, reason; 201 adjustment; same ID/body replays, changed body 409 |
 | GET `/admin/products/{id}/stock-history` | Admin | Paginated append-only stock/reservation history |
 | POST `/orders` | Customer + CSRF | Items and Idempotency-Key; 201 original order snapshot + Location |
@@ -146,7 +154,7 @@ Collections use `page` (default 1), `pageSize` (default 20, maximum 100), stable
 
 The [shared HTTP contract](http-contract.md) defines the implemented error DTO/status mappings, trace/log rules, money grammar, pagination offset bound and default `CreatedAt DESC, Id DESC` ordering. An added foundations milestone 02a precedes later HTTP features; the PostgreSQL milestone 03 is complete (see status for evidence). These foundations do not implement resource ownership queries or collections.
 
-Errors use Problem Details with stable `code`, `traceId`, and validation fields where relevant: 400 validation/antiforgery, 401 unauthenticated, 403 forbidden, 404 absent/not owned, 409 state/idempotency/stock/version conflict, 413 excessive body, 429 throttled, 503 transient infrastructure failure, 500 unexpected failure. Never expose stack traces, SQL, or secrets. Cookie authentication returns API 401/403, never redirects to HTML login. Auth-specific codes are 400 `antiforgery_failed`/`https_required` and 401 `invalid_credentials`; duplicate registration uses 400 `validation_failed`. Callback invalid signature returns 401, malformed schema 400, oversized body 413; same provider event ID with different authenticated payload returns 409 and an alert. Quarantine valid unknown references durably, acknowledge 202, and expose the failure for reconciliation.
+Errors use Problem Details with stable `code`, `traceId`, and validation fields where relevant: 400 validation/antiforgery, 401 unauthenticated, 403 forbidden, 404 absent/not owned, 409 state/idempotency/stock/version conflict, 413 excessive body, 429 throttled, 503 transient infrastructure failure, 500 unexpected failure. Never expose stack traces, SQL, or secrets. Cookie authentication returns API 401/403, never redirects to HTML login. Auth-specific codes are 400 `antiforgery_failed`/`https_required` and 401 `invalid_credentials`; duplicate registration uses 400 `validation_failed`; duplicate normalized SKU uses 409 `sku_conflict`. Callback invalid signature returns 401, malformed schema 400, oversized body 413; same provider event ID with different authenticated payload returns 409 and an alert. Quarantine valid unknown references durably, acknowledge 202, and expose the failure for reconciliation.
 
 ## 7. Consistency and durable messaging
 

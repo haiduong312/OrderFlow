@@ -30,6 +30,7 @@ Every foundation-generated HTTP error before a response starts uses `Content-Typ
 | 409 | `state_conflict` | Invalid state; default bodyless conflict |
 | 409 | `idempotency_conflict` | Same idempotency identity, different normalized request |
 | 409 | `insufficient_stock` | Guarded reservation/stock conflict |
+| 409 | `sku_conflict` | Existing normalized SKU, including archived products |
 | 409 | `version_conflict` | Stale optimistic version |
 | 409 | `order_expired` | Deadline conflict; future overdue command may first commit expiry as specified |
 | 413 | `request_too_large` | Framework/endpoint request-body limit |
@@ -124,3 +125,5 @@ curl -i -H 'Accept: text/html' http://127.0.0.1:5080/api/does-not-exist
 Set `DOTNET_ENVIRONMENT=Development` before starting to read `/openapi/v1.json`; Production returns the generic 404 for that route. Run solution tests to exercise validation/money/failure/cancellation probes; there is intentionally no production endpoint for forcing an exception or marking payment successful.
 
 Milestone 04 authentication endpoint examples, cookie/CSRF refresh steps, rate limits and development bootstrap are in [authentication.md](authentication.md). No roles/cookies/passwords or request tokens are included in application request logs.
+
+Milestone 07 Catalog uses explicit request/response DTOs, positive USD money strings, bounded query models and typed OpenAPI schemas. [Catalog guide](catalog.md) defines filtering/sorting/archival, version/unique conflicts and manual steps. No class-level Produces application/json overrides ProblemDetails content types.

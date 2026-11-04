@@ -6,6 +6,7 @@ using OrderFlow.Application.Common.Money;
 using OrderFlow.Application.Common.Time;
 using OrderFlow.Application.Messaging;
 using OrderFlow.Application.Modules.Identity;
+using OrderFlow.Application.Modules.Catalog;
 
 namespace OrderFlow.Application.Persistence;
 
@@ -15,6 +16,8 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Category> Categories => Set<Category>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder builder)
     {
@@ -41,6 +44,8 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
         builder.ApplyConfiguration(new IdempotencyRecordConfiguration());
         builder.ApplyConfiguration(new OutboxMessageConfiguration());
         builder.ApplyConfiguration(new ProcessedMessageConfiguration());
+        builder.ApplyConfiguration(new ProductConfiguration());
+        builder.ApplyConfiguration(new CategoryConfiguration());
     }
 }
 

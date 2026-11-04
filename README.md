@@ -1,6 +1,6 @@
 # OrderFlow
 
-A portfolio modular monolith for ASP.NET Core / full-stack development. Current delivery: milestone 06, reusable resource authorization policies/handlers and application-facing caller identity. Identity cookie authentication and PostgreSQL persistence remain; Orders/admin CRUD, React and broker publishing are not implemented. Milestone 05 React remains pending; 06 depends on completed auth milestone 04.
+A portfolio modular monolith for ASP.NET Core / full-stack development. Current delivery: milestone 07, PostgreSQL Product/Category catalog with Admin create/update/archive and public read/search APIs. Identity cookies/CSRF and resource authorization remain in place. Inventory, Orders, React, caching and uploads are not implemented; milestone 05 React remains pending.
 
 Read the [project contract](docs/project-spec.md), [architecture](docs/architecture.md), [ADRs](docs/adr/README.md), and [implementation status](docs/implementation-status.md) before adding features. Repository working rules are in [AGENTS.md](AGENTS.md).
 
@@ -25,7 +25,7 @@ dotnet build OrderFlow.slnx --configuration Release --no-restore
 dotnet test OrderFlow.slnx --configuration Release --no-build --no-restore
 ```
 
-The solution contains five projects. Current suite: 48 unit tests, 65 external-service-free policy/HTTP/composition tests and 36 PostgreSQL integration tests, **149 total**. PostgreSQL tests create/migrate/drop only their own uniquely named test database, never the configured dev database/volume; missing configuration fails clearly rather than using an in-memory fallback. SQL tests cover actual uniqueness/FKs/checks, immutable snapshots, shared commit/rollback, UTC/numeric conversion and scoped host/Identity storage. Auth tests cover cookie/CSRF flows, roles, lockout, development configuration/seeding and deterministic duplicate-registration/two-host login races. Representative-resource policy/HTTP tests cover owner/non-owner/Admin/missing resources, cookie identity spoofing and separation from business rules. Actual Order ownership SQL/business behavior remains future work. For the 113-test external-service-free subset, add `--filter 'Category!=PostgreSQL'`. Test-only controllers are explicitly registered in a test factory; the shipped API has no mutating probe endpoint.
+The solution contains five projects. Current suite: 57 unit tests, 66 external-service-free policy/HTTP/composition tests and 69 PostgreSQL integration tests, **192 total**. PostgreSQL tests create/migrate/drop only their own uniquely named test database, never the configured dev database/volume; missing configuration fails clearly rather than using an in-memory fallback. SQL tests cover actual uniqueness/FKs/checks, immutable snapshots, shared commit/rollback, UTC/numeric conversion and scoped host/Identity storage. Auth tests cover cookie/CSRF flows, roles, lockout, development configuration/seeding and deterministic duplicate-registration/two-host login races. Representative-resource policy/HTTP tests cover owner/non-owner/Admin/missing resources, cookie identity spoofing and separation from business rules. Actual Order ownership SQL/business behavior remains future work. Catalog tests additionally cover constraints, literal substring search, filters/page boundaries, unique sorting, archive/restore, permissions, OpenAPI and deterministic SKU/version races. For the 123-test external-service-free subset, add `--filter 'Category!=PostgreSQL'`. Test-only controllers are explicitly registered in a test factory; the shipped API has no mutating probe endpoint.
 
 Build outputs go to ignored `artifacts/`, separated by project/configuration. To keep even local generated output outside the repository, pass the same `--artifacts-path /tmp/orderflow-artifacts` to restore/build/test/run (choose a writable equivalent on Windows). Use the same configuration/output path across commands; `--no-build` must refer to previously built output.
 
@@ -93,14 +93,14 @@ src/
   OrderFlow.Worker/          Generic Host; references Application
   OrderFlow.Application/
     Modules/                Domain rules and use cases, grouped by module/feature
-    Persistence/            Scoped context, explicit mappings and initial migration
+    Persistence/            Scoped context, explicit mappings and migrations
     Messaging/              Durable outbox/inbox records; no publisher yet
 tests/
   OrderFlow.UnitTests/       Application money/time/pagination primitives
   OrderFlow.IntegrationTests/ HTTP, PostgreSQL and host composition tests
 ```
 
-Application/Common contains BCL-only primitives. Persistence now contains OrderFlowDbContext/mappings/migrations, Modules/Identity contains Identity policy/storage and explicit development bootstrap, and Messaging contains durable outbox/inbox records. Other modules remain future boundaries. Domain/application/infrastructure are folder boundaries inside that assembly, as ADR-001 chose; they are not additional production projects. API/Worker do not reference each other, and Application references neither host. See [ADR-009](docs/adr/0009-postgresql-reliability-foundations.md).
+Application/Common contains BCL-only primitives. Persistence now contains OrderFlowDbContext/mappings/migrations, Modules/Identity contains Identity policy/storage and explicit development bootstrap, Modules/Catalog contains Product/Category rules/DTOs/use cases, and Messaging contains durable outbox/inbox records. Other modules remain future boundaries. Domain/application/infrastructure are folder boundaries inside that assembly, as ADR-001 chose; they are not additional production projects. API/Worker do not reference each other, and Application references neither host. See [ADR-009](docs/adr/0009-postgresql-reliability-foundations.md).
 
 ## Dependency changes
 
@@ -110,4 +110,4 @@ For an intentional package upgrade, edit central versions, run `dotnet restore O
 
 ## Next milestone and limits
 
-Milestone 06 completes reusable authorization foundations; see [authorization policies and integration guide](docs/authorization.md). Actual Order queries and admin transitions must integrate them in their feature milestones. React scaffolding in 05 is still pending. Read [ADR-010](docs/adr/0010-identity-cookie-authentication.md) for security choices and limits. No readiness endpoint, catalog/inventory/order/payment/client behavior or background job exists now. Shared reliability storage does not yet dispatch events or replay business commands. Full A01 includes the client/proxy later; A06/A16–A19 still need real use-case/dispatch/concurrency evidence beyond schema/transaction tests. Development owner privileges are not a production least-privilege deployment.
+Milestone 07 completes the Catalog slice; follow the [Catalog API/migration/manual guide](docs/catalog.md). Apply 20261103093358_AddCatalog explicitly after building. Read [ADR-012](docs/adr/0012-catalog-products-categories.md) for category visibility, version/lock and search/index decisions. Next backend dependency is Inventory 08; React 05 remains pending. Actual Order queries/fulfillment must later integrate [authorization policies](docs/authorization.md). Read [ADR-010](docs/adr/0010-identity-cookie-authentication.md) for security choices and limits. No readiness endpoint, inventory/order/payment/client behavior or background job exists now. Catalog responses contain no invented inventory counts. Shared reliability storage does not yet dispatch events or replay business commands. Full A01 includes the client/proxy later; A06/A16–A19 still need real use-case/dispatch/concurrency evidence beyond schema/transaction tests. Development owner privileges are not a production least-privilege deployment.

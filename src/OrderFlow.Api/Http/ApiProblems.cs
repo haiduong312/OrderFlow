@@ -17,6 +17,7 @@ public static class ApiProblems
             ApplicationError.IdempotencyConflict => (409, "idempotency_conflict", "The idempotency key was used for a different request."),
             ApplicationError.InsufficientStock => (409, "insufficient_stock", "Insufficient stock is available."),
             ApplicationError.VersionConflict => (409, "version_conflict", "The resource version has changed."),
+            ApplicationError.SkuConflict => (409, "sku_conflict", "The SKU is already in use."),
             ApplicationError.OrderExpired => (409, "order_expired", "The order has expired."),
             _ => (500, "internal_error", "An unexpected error occurred.")
         };

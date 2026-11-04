@@ -1,6 +1,6 @@
 # OrderFlow architecture
 
-Status: accepted design. Milestones 02/02a/03/04/06 implement host/HTTP/persistence, Identity authentication and resource authorization foundations; catalog/order/payment/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
+Status: accepted design. Milestones 02/02a/03/04/06/07 implement host/HTTP/persistence, Identity/resource authorization and Catalog; order/inventory/payment/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
 
 ## 1. Deployment and code organization
 
@@ -47,6 +47,8 @@ Milestone 04 adds API/Auth session orchestration, role policies, secure cookie s
 
 Milestone 06 adds ICurrentUser/IOwnedResource contracts in Application/Common/Authorization and ASP.NET Core policies/handlers in API/Auth/Authorization. Scoped ResourceAccess maps explicit permission failures to the existing HTTP contract. Owner queries and domain transition rules still belong to later application features; [ADR-011](adr/0011-resource-authorization.md) and the [authorization guide](authorization.md) define this boundary.
 
+Milestone 07 adds Catalog entities/use cases and explicit EF mappings in the shared context, plus public/admin API controllers and feature-specific OpenAPI schemas. [ADR-012](adr/0012-catalog-products-categories.md) documents the category lock level, archive visibility and baseline substring-search scan behavior. No Inventory model is generated prematurely.
+
 ## 2. Platform and version policy
 
 Target the stable .NET 10 LTS / ASP.NET Core 10 / EF Core 10 family with the compatible Npgsql EF provider, PostgreSQL 18, Node.js 24 LTS, React/TypeScript, TanStack Query, and Zustand. .NET 10 LTS is selected from the [official support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core). No previews. These are platform-family decisions, not installed dependency claims.
@@ -62,7 +64,7 @@ Use one `OrderFlowDbContext` derived from Identity's EF context, with all mappin
 | Owner/schema | Main records | Ownership rules |
 | --- | --- | --- |
 | Identity / `identity` | Identity users, roles, claims, login/security data | Identity APIs own password/role/session rules; Customer is default role |
-| Catalog / `catalog` | Products, normalized SKU, price, active, version | Catalog alone changes product data; checkout obtains an authoritative locked snapshot |
+| Catalog / `catalog` | Categories/Products, normalized SKU, positive price, active, versions | Catalog alone changes product data; checkout obtains an authoritative locked snapshot |
 | Inventory / `inventory` | StockBalances, Reservations, StockHistory | Inventory alone changes counters/reservations; ordering calls it inside the shared transaction |
 | Ordering / `ordering` | Orders, OrderLines, OrderHistory (future) | Owns lifecycle, owner ID, immutable totals/line snapshots, expiry; uses the shared idempotency store |
 | Payments / `payments` | Attempts, Captures, Refunds, ProviderEvents (future) | Owns provider references, observations, compensation intentions, reconciliation; uses the shared idempotency store |
@@ -92,7 +94,7 @@ Async I/O propagates CancellationToken from HTTP or worker shutdown. A DbContext
 
 Use Read Committed with explicit row locks, guarded writes, and unique constraints. [PostgreSQL Read Committed](https://www.postgresql.org/docs/18/transaction-iso.html) re-evaluates an UPDATE condition after a conflicting update; still check affected-row counts. Do not assume wrapping read-check-write in a transaction alone prevents overselling.
 
-Lock order: request-idempotency claim when relevant -> existing order -> payment/capture rows -> catalog products in ascending UUID -> stock balances/reservations in ascending product UUID. A transaction skips unused levels; it must never acquire an earlier level after a later one. CreateOrder claims its key, locks catalog products for stable price/active snapshots, then stock in sorted order; it inserts its new order without contending on an existing order lock. Catalog edits lock product first; stock adjustment locks its stock row and never later acquires product/order locks. Confirmation/cancel/expiry lock the order before reading eligibility, then associated rows, then inventory. Product deactivation does not invalidate existing reservations. Bulk expiry processes one order per short unit of work; avoid a batch lock pattern that reverses order/inventory lock ordering.
+Lock order: request-idempotency claim when relevant -> existing order -> payment/capture rows -> catalog categories in ascending UUID -> catalog products in ascending UUID -> stock balances/reservations in ascending product UUID. A transaction skips unused levels; it must never acquire an earlier level after a later one. CreateOrder claims its key, locks/revalidates category associations and catalog products for stable eligibility/price snapshots, then stock in sorted order; it inserts its new order without contending on an existing order lock. Milestone 07 introduces the Category lock level: product create/content update locks the target category before the product write; product-only archive skips that level. Future checkout must discover/revalidate category associations under its category/product locks before deciding effective activity. Stock adjustment locks its stock row and never later acquires product/order locks. Confirmation/cancel/expiry lock the order before reading eligibility, then associated rows, then inventory. Product deactivation does not invalidate existing reservations. Bulk expiry processes one order per short unit of work; avoid a batch lock pattern that reverses order/inventory lock ordering.
 
 Reserve using guarded SQL (`Available >= requested`) and require exactly one affected balance per line. Consume/release require Active reservation and matching PendingPayment order guard under the order lock. Roll back the entire checkout if any product/stock update fails. Do not use `Task.WhenAll` over context operations or in-process locks for durable correctness. Use explicit expectedVersion predicates for Admin edits/fulfillment.
 

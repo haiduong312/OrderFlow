@@ -1,6 +1,6 @@
-# PostgreSQL persistence — milestone 03
+# PostgreSQL persistence — milestones 03/07
 
-One scoped OrderFlowDbContext contains Identity and the three durable reliability stores. No catalog/order/payment entities, broker, dispatcher, lease-claim worker or automatic migration/seed exists. Milestone 04 uses the existing Identity storage for [browser authentication and opt-in development accounts](authentication.md); no additional migration is needed. See [ADR-009](adr/0009-postgresql-reliability-foundations.md), [architecture](architecture.md), and [implementation status](implementation-status.md).
+One scoped OrderFlowDbContext contains Identity and the three durable reliability stores. Milestone 07 adds Catalog Products/Categories with explicit mappings/migration. No order/inventory/payment entities, broker, dispatcher, lease-claim worker or automatic migration/seed exists. Milestone 04 uses the existing Identity storage for [browser authentication and opt-in development accounts](authentication.md); no additional migration is needed. See [ADR-009](adr/0009-postgresql-reliability-foundations.md), [architecture](architecture.md), and [implementation status](implementation-status.md).
 
 ## Local PostgreSQL only
 
@@ -41,7 +41,7 @@ dotnet ef database update --project src/OrderFlow.Application --startup-project 
 dotnet ef migrations has-pending-model-changes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build
 ```
 
-The local manifest pins dotnet-ef **10.0.14**. EF Core/Identity use **10.0.14** and Npgsql EF/provider **10.0.3**, with central versions/generated lockfiles. The design-time factory reads `ConnectionStrings__OrderFlow`; it never hardcodes a password or starts the web host to migrate. Initial migration: **20261102023642_InitialPersistence**, including an explicitly reviewed PostgreSQL snapshot-protection trigger. History is `messaging.__EFMigrationsHistory`.
+The local manifest pins dotnet-ef **10.0.14**. EF Core/Identity use **10.0.14** and Npgsql EF/provider **10.0.3**, with central versions/generated lockfiles. The design-time factory reads `ConnectionStrings__OrderFlow`; it never hardcodes a password or starts the web host to migrate. Migrations: **20261102023642_InitialPersistence** and additive **20261103093358_AddCatalog**. The first migration includes an explicitly reviewed PostgreSQL snapshot-protection trigger. History is `messaging.__EFMigrationsHistory`.
 
 Run migration once as an operator/deployment step before normal replicas, with a schema-owner connection. API/worker startup never calls Migrate, EnsureCreated, EnsureDeleted or seeding. EF's migration lock is additional protection, not a reason to let every replica race to migrate. On a completely empty database EF can log an initial missing-history-table probe before creating/applying the first migration; verify the final command result and history row.
 
@@ -134,3 +134,7 @@ docker compose -p orderflow-fresh --profile dev up -d --wait
 Update the private connection/test settings to that port, then run the dedicated migration/seed steps. The original project volume remains untouched.
 
 If you intentionally want to erase disposable dev data, first identify the exact project/volume and back it up if needed. Only then, manually run `docker compose -p <the-disposable-project> --profile dev down --volumes`, followed by normal up/migrate/optional seed. **That command permanently deletes that project's volume; it is never executed by the application, tests against the configured dev database, startup, seed command, or a reset script.** No automatic reset command was added or run against user data. The verification volume is retained after stopping its project.
+
+## Catalog migration (07)
+
+After building, run the same dedicated `dotnet ef database update` step above; it now also applies 20261103093358_AddCatalog. Existing Identity/reliability data is retained, and repeated update is a no-op. Catalog creates Categories/Products, required restrictive Category FK, unique normalized SKU, numeric(18,2) positive-price/finite-time/name/version checks and the documented B-tree ordering/filter indexes. No Inventory column/table or default catalog seed is added. See [Catalog](catalog.md) for actual query/index behavior and HTTP verification. Direct raw SQL numeric input can be coerced by numeric(18,2); API/domain reject extra scale before writes. Down removes Catalog data, so never run a rollback/reset against data you need.

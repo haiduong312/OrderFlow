@@ -32,7 +32,7 @@ public static class HttpFoundations
             {
                 document.Info.Title = "OrderFlow API";
                 document.Info.Version = "v1";
-                document.Info.Description = "Cookie-based browser authentication and HTTP foundations. Unsafe browser methods require the antiforgery cookie/token pair (X-CSRF-TOKEN). Errors use application/problem+json with code, traceId and errors. No catalog/order CRUD is implemented.";
+                document.Info.Description = "Identity browser authentication and Product/Category catalog. Public reads show active products in active categories; Admin writes require cookies and X-CSRF-TOKEN. Money is a USD decimal string. Errors use application/problem+json with code, traceId and errors. No inventory/order behavior is implemented.";
                 return Task.CompletedTask;
             });
             options.AddSchemaTransformer((schema, context, _) =>
