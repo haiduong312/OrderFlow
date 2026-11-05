@@ -33,7 +33,8 @@ public sealed record StockMovementResponse(Guid Id, Guid ProductId, string Opera
     [property: JsonConverter(typeof(JsonStringEnumConverter<StockActorKind>))] StockActorKind ActorKind,
     Guid? ActorUserId, string Reason, int OnHandDelta, int ReservedDelta,
     int OnHandBefore, int ReservedBefore, int OnHandAfter, int ReservedAfter, long Revision,
-    [property: JsonConverter(typeof(StockTimestampJsonConverter))] DateTimeOffset OccurredAt)
+    [property: JsonConverter(typeof(StockTimestampJsonConverter))] DateTimeOffset OccurredAt,
+    Guid? OrderId = null, Guid? ReservationId = null)
 {
     public int AvailableAfter => OnHandAfter - ReservedAfter;
 }

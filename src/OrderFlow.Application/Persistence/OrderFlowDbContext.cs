@@ -8,6 +8,7 @@ using OrderFlow.Application.Messaging;
 using OrderFlow.Application.Modules.Identity;
 using OrderFlow.Application.Modules.Catalog;
 using OrderFlow.Application.Modules.Inventory;
+using OrderFlow.Application.Modules.Ordering;
 
 namespace OrderFlow.Application.Persistence;
 
@@ -21,6 +22,10 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<InventoryBalance> InventoryBalances => Set<InventoryBalance>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<OrderHistory> OrderHistory => Set<OrderHistory>();
+    public DbSet<InventoryReservation> InventoryReservations => Set<InventoryReservation>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder builder)
     {
@@ -51,6 +56,10 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
         builder.ApplyConfiguration(new CategoryConfiguration());
         builder.ApplyConfiguration(new InventoryBalanceConfiguration());
         builder.ApplyConfiguration(new StockMovementConfiguration());
+        builder.ApplyConfiguration(new OrderConfiguration());
+        builder.ApplyConfiguration(new OrderItemConfiguration());
+        builder.ApplyConfiguration(new OrderHistoryConfiguration());
+        builder.ApplyConfiguration(new InventoryReservationConfiguration());
     }
 }
 

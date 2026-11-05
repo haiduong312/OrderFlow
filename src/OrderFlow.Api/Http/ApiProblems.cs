@@ -20,6 +20,7 @@ public static class ApiProblems
             ApplicationError.SkuConflict => (409, "sku_conflict", "The SKU is already in use."),
             ApplicationError.StockLimitExceeded => (409, "stock_limit_exceeded", "The stock quantity or revision limit would be exceeded."),
             ApplicationError.OrderExpired => (409, "order_expired", "The order has expired."),
+            ApplicationError.ServiceUnavailable => (503, "service_unavailable", "The service is temporarily unavailable. Retry with the same idempotency key."),
             _ => (500, "internal_error", "An unexpected error occurred.")
         };
 

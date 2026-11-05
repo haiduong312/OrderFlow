@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using OrderFlow.Application.Persistence;
 using OrderFlow.Api.Catalog;
 using OrderFlow.Api.Inventory;
+using OrderFlow.Application.Modules.Ordering;
 
 namespace OrderFlow.Api;
 
@@ -17,6 +18,7 @@ public class Program
         builder.Services.AddBrowserAuthentication();
         builder.Services.AddCatalog();
         builder.Services.AddInventory();
+        builder.Services.AddScoped<CheckoutService>();
         var app = builder.Build();
         // Validate final configuration before accepting any requests, including in test hosts.
         _ = app.Services.GetRequiredService<BrowserAuthSettings>();

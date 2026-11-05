@@ -43,7 +43,7 @@ InventoryLocking.LockAsync supports 1–100 distinct product IDs. It deduplicate
 
 Balance writes use tracked EF entities under locks, not ExecuteUpdate. A prior Unchanged tracked balance is explicitly refreshed (current/original snapshots, state reset) from a fresh locking query. Pending unsaved edits to a target balance are rejected; they are not silently discarded. This prevents stale read values from overwriting another process's committed stock. A failed cross-product duplicate discards its new movement and reloads its rolled-back balance before returning a conflict/replay.
 
-Count/page history reads are bounded/no-tracking and sequential, not an atomic snapshot while new movements arrive. Available is advisory; checkout must later enforce reservation eligibility inside its own transaction. No full reservation ledger/state machine, stock transfer/batch UI, outbox dispatch or background worker is added in this milestone.
+Count/page history reads are bounded/no-tracking and sequential, not an atomic snapshot while new movements arrive. Available is advisory; checkout 12 now enforces reservation eligibility inside its own transaction. No full reservation ledger/state machine, stock transfer/batch UI, outbox dispatch or background worker is added in this milestone.
 
 ## Manual verification
 
@@ -76,3 +76,7 @@ dotnet test OrderFlow.slnx -c Release --no-build --no-restore --filter 'FullyQua
 ```
 
 Use the matching --artifacts-path across restore/build/test if building outside the repo. No credential appears in tracked examples. No real sleeps establish races: tests synchronize distinct request DbContexts before contested locks/inserts and verify every participant. Evidence/limits are recorded in [implementation status](implementation-status.md).
+
+## Checkout reservation effects (12)
+
+Customer [checkout](checkout.md) now creates Active InventoryReservations and Reservation/Customer ledger facts under the same ordered balance locks as stock changes. It increments Reserved/revision only, with ReserveStock:v1 keyed by the reservation UUID and order/reservation references exposed in Admin stock history. Receipt/Adjustment behavior and replay remain unchanged. Existing CHECKs still forbid Reserved>OnHand, so adjustments cannot remove reserved units. Consumption/release/cancellation/expiry remain later work; stale reservations conservatively reduce Available until those workflows exist. See [ADR-015](adr/0015-idempotent-checkout.md).

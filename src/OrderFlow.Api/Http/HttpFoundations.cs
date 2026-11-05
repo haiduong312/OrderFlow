@@ -32,7 +32,7 @@ public static class HttpFoundations
             {
                 document.Info.Title = "OrderFlow API";
                 document.Info.Version = "v1";
-                document.Info.Description = "Identity browser authentication, Product/Category catalog and audited Admin Inventory receipts/adjustments/history. Public products expose advisory Available; Admin writes require cookies and X-CSRF-TOKEN. Money is a USD decimal string. Errors use application/problem+json with code, traceId and errors. Full order reservations are not implemented.";
+                document.Info.Description = "Identity cookies, Catalog, audited Admin stock commands and idempotent Customer checkout. POST /api/orders requires Idempotency-Key and X-CSRF-TOKEN, reserves stock atomically and snapshots server prices. GET /api/orders/{id} reads the owner's current order. Money is a USD decimal string. Errors use application/problem+json with code, traceId and errors. Payment and expiry workers are not implemented.";
                 return Task.CompletedTask;
             });
             options.AddSchemaTransformer((schema, context, _) =>

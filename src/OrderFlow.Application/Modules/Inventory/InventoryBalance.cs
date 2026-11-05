@@ -15,6 +15,18 @@ public sealed class InventoryBalance
         ? new() { ProductId = productId }
         : throw new ArgumentException("A product ID is required.", nameof(productId));
 
+    public StockMovement Reserve(InventoryReservation reservation, Guid actorId)
+    {
+        if (reservation.ProductId != ProductId || reservation.Status != ReservationStatus.Active || actorId == Guid.Empty)
+            throw new ArgumentException("An active reservation for this product and a customer actor are required.");
+        if (reservation.Quantity > Available) throw new ApplicationFailureException(ApplicationError.InsufficientStock);
+        if (Revision == long.MaxValue) throw new ApplicationFailureException(ApplicationError.StockLimitExceeded);
+        var movement = StockMovement.Reserve(reservation, actorId, OnHand, Reserved, Revision + 1);
+        Reserved += reservation.Quantity;
+        Revision++;
+        return movement;
+    }
+
     public StockMovement Change(Guid operationId, StockMovementKind kind, int delta, string? reason, Guid actorId, DateTimeOffset now)
     {
         StockMovement.ValidateCommand(operationId, kind, delta, actorId);

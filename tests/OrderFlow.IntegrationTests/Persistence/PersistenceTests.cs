@@ -27,7 +27,7 @@ public sealed class PersistenceTests(PostgresServer server) : PostgresTest(serve
     public async Task Initial_migration_and_important_database_objects_exist()
     {
         await using var context = Database.CreateContext();
-        Assert.Equal(3, (await context.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(4, (await context.Database.GetAppliedMigrationsAsync()).Count());
         Assert.Empty(await context.Database.GetPendingMigrationsAsync());
         Assert.False(context.Database.HasPendingModelChanges());
         await using var connection = new NpgsqlConnection(Database.ConnectionString);

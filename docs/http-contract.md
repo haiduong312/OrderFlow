@@ -1,6 +1,6 @@
 # Shared HTTP and application foundations (milestone 02a)
 
-This documents HTTP foundations, not CRUD/authentication/order lookup. Milestone 03 adds separate [PostgreSQL storage](persistence.md); liveness still does not query it. The only business-facing route remains GET `/api/health/live`; Development additionally exposes GET `/openapi/v1.json`. Test-only controllers exercise the shared pipeline and are never registered in the shipped host. See [ADR-008](adr/0008-http-application-foundations.md), [specification](project-spec.md), and [implementation status](implementation-status.md).
+This documents the shared HTTP foundations used by Identity, Catalog, Inventory and [checkout](checkout.md). Feature guides define their request/authorization/transaction contracts; [the specification](project-spec.md) is authoritative for behavior. Liveness still does not query PostgreSQL; Development OpenAPI describes the current shipped controllers. Test-only probes are never registered in the shipped host. See [ADR-008](adr/0008-http-application-foundations.md) and [implementation status](implementation-status.md).
 
 ## Error representation and mapping
 

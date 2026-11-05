@@ -528,6 +528,49 @@ namespace OrderFlow.Application.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("OrderFlow.Application.Modules.Inventory.InventoryReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("OrderId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("InventoryReservations", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_Reservations_Deadline", "isfinite(\"CreatedAt\") AND isfinite(\"ExpiresAt\") AND \"ExpiresAt\" = \"CreatedAt\" + interval '15 minutes'");
+
+                            t.HasCheckConstraint("CK_Reservations_Quantity", "\"Quantity\" BETWEEN 1 AND 1000");
+
+                            t.HasCheckConstraint("CK_Reservations_State", "\"Status\" IN ('Active','Consumed','Released')");
+                        });
+                });
+
             modelBuilder.Entity("OrderFlow.Application.Modules.Inventory.StockMovement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -567,6 +610,9 @@ namespace OrderFlow.Application.Persistence.Migrations
                     b.Property<Guid>("OperationId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("OrderId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
 
@@ -574,6 +620,9 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("ReservationId")
+                        .HasColumnType("uuid");
 
                     b.Property<int>("ReservedAfter")
                         .HasColumnType("integer");
@@ -600,9 +649,11 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .IsDescending(false, true)
                         .HasDatabaseName("UX_StockMovements_Product_Revision");
 
+                    b.HasIndex("ReservationId", "OrderId", "ProductId");
+
                     b.ToTable("StockMovements", "inventory", t =>
                         {
-                            t.HasCheckConstraint("CK_StockMovements_Kind", "(\"Kind\" = 'Initialization' AND \"Operation\" = 'InitializeInventory:v1'\n AND \"OperationId\" = \"ProductId\" AND \"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL\n AND \"Revision\" = 0 AND \"OnHandBefore\" = 0 AND \"OnHandAfter\" = 0\n AND \"ReservedBefore\" = 0 AND \"ReservedAfter\" = 0 AND \"OnHandDelta\" = 0 AND \"ReservedDelta\" = 0)\nOR\n(\"Kind\" IN ('Receipt','Adjustment') AND \"Operation\" = 'ChangeStock:v1'\n AND \"ActorKind\" = 'Admin' AND \"ActorUserId\" IS NOT NULL AND \"Revision\" > 0\n AND \"ReservedDelta\" = 0 AND \"OnHandDelta\" <> 0\n AND (\"Kind\" <> 'Receipt' OR \"OnHandDelta\" > 0))");
+                            t.HasCheckConstraint("CK_StockMovements_Kind", "(\"Kind\" = 'Initialization' AND \"Operation\" = 'InitializeInventory:v1'\n AND \"OperationId\" = \"ProductId\" AND \"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL\n AND \"Revision\" = 0 AND \"OnHandBefore\" = 0 AND \"OnHandAfter\" = 0\n AND \"ReservedBefore\" = 0 AND \"ReservedAfter\" = 0 AND \"OnHandDelta\" = 0 AND \"ReservedDelta\" = 0\n AND \"OrderId\" IS NULL AND \"ReservationId\" IS NULL)\nOR\n(\"Kind\" IN ('Receipt','Adjustment') AND \"Operation\" = 'ChangeStock:v1'\n AND \"ActorKind\" = 'Admin' AND \"ActorUserId\" IS NOT NULL AND \"Revision\" > 0\n AND \"ReservedDelta\" = 0 AND \"OnHandDelta\" <> 0\n AND (\"Kind\" <> 'Receipt' OR \"OnHandDelta\" > 0)\n AND \"OrderId\" IS NULL AND \"ReservationId\" IS NULL)\nOR\n(\"Kind\" = 'Reservation' AND \"Operation\" = 'ReserveStock:v1'\n AND \"ActorKind\" = 'Customer' AND \"ActorUserId\" IS NOT NULL AND \"Revision\" > 0\n AND \"OrderId\" IS NOT NULL AND \"ReservationId\" IS NOT NULL AND \"OperationId\" = \"ReservationId\"\n AND \"OnHandDelta\" = 0 AND \"ReservedDelta\" BETWEEN 1 AND 1000)");
 
                             t.HasCheckConstraint("CK_StockMovements_OccurredAt", "isfinite(\"OccurredAt\")");
 
@@ -611,6 +662,140 @@ namespace OrderFlow.Application.Persistence.Migrations
                             t.HasCheckConstraint("CK_StockMovements_Quantities", "\"OnHandBefore\" >= 0 AND \"ReservedBefore\" >= 0 AND \"ReservedBefore\" <= \"OnHandBefore\"\nAND \"OnHandAfter\" >= 0 AND \"ReservedAfter\" >= 0 AND \"ReservedAfter\" <= \"OnHandAfter\"\nAND \"OnHandBefore\"::bigint + \"OnHandDelta\" = \"OnHandAfter\"::bigint\nAND \"ReservedBefore\"::bigint + \"ReservedDelta\" = \"ReservedAfter\"::bigint");
 
                             t.HasCheckConstraint("CK_StockMovements_Reason", "\"Reason\" ~ '[^[:space:]]'");
+                        });
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Ordering.Order", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CheckoutRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckoutRequestId")
+                        .IsUnique();
+
+                    b.HasIndex("ExpiresAt", "Id")
+                        .HasFilter("\"Status\" = 'PendingPayment'");
+
+                    b.HasIndex("UserId", "CreatedAt", "Id")
+                        .IsDescending(false, true, true);
+
+                    b.ToTable("Orders", "ordering", t =>
+                        {
+                            t.HasCheckConstraint("CK_Orders_Deadline", "isfinite(\"CreatedAt\") AND isfinite(\"ExpiresAt\") AND \"ExpiresAt\" = \"CreatedAt\" + interval '15 minutes'");
+
+                            t.HasCheckConstraint("CK_Orders_Money", "\"Currency\" = 'USD' AND \"Total\" > 0 AND \"Total\" <= 9999999999999999.99");
+
+                            t.HasCheckConstraint("CK_Orders_State", "\"Version\" > 0 AND \"Status\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired')");
+                        });
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Ordering.OrderHistory", b =>
+                {
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("OrderId", "Version");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.ToTable("OrderHistory", "ordering", t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderHistory_Metadata", "\"Version\" > 0 AND isfinite(\"OccurredAt\") AND length(btrim(\"Reason\")) > 0 AND \"Status\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired')");
+                        });
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Ordering.OrderItem", b =>
+                {
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("LineTotal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Sku")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .UseCollation("C");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.HasKey("OrderId", "ProductId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("OrderItems", "ordering", t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderItems_Money", "\"UnitPrice\" > 0 AND \"UnitPrice\" <= 9999999999999999.99 AND \"LineTotal\" > 0 AND \"LineTotal\" <= 9999999999999999.99 AND \"LineTotal\" = \"UnitPrice\" * \"Quantity\"");
+
+                            t.HasCheckConstraint("CK_OrderItems_Quantity", "\"Quantity\" BETWEEN 1 AND 1000");
+
+                            t.HasCheckConstraint("CK_OrderItems_Snapshot", "\"Sku\" ~ '^[A-Z0-9-]{1,64}$' AND length(btrim(\"Name\")) > 0");
                         });
                 });
 
@@ -757,6 +942,21 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("OrderFlow.Application.Modules.Inventory.InventoryReservation", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Modules.Inventory.InventoryBalance", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Ordering.OrderItem", null)
+                        .WithOne()
+                        .HasForeignKey("OrderFlow.Application.Modules.Inventory.InventoryReservation", "OrderId", "ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("OrderFlow.Application.Modules.Inventory.StockMovement", b =>
                 {
                     b.HasOne("OrderFlow.Application.Modules.Identity.ApplicationUser", null)
@@ -765,6 +965,57 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("OrderFlow.Application.Modules.Inventory.InventoryBalance", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Inventory.InventoryReservation", null)
+                        .WithMany()
+                        .HasForeignKey("ReservationId", "OrderId", "ProductId")
+                        .HasPrincipalKey("Id", "OrderId", "ProductId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Ordering.Order", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Persistence.IdempotencyRecord", null)
+                        .WithOne()
+                        .HasForeignKey("OrderFlow.Application.Modules.Ordering.Order", "CheckoutRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Ordering.OrderHistory", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Modules.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Ordering.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Ordering.OrderItem", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Modules.Ordering.Order", null)
+                        .WithMany("Items")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Catalog.Product", null)
                         .WithMany()
                         .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -784,6 +1035,11 @@ namespace OrderFlow.Application.Persistence.Migrations
                 {
                     b.Navigation("Inventory")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Ordering.Order", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

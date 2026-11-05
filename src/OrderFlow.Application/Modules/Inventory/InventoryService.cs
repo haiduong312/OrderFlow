@@ -88,7 +88,7 @@ public sealed class InventoryService(OrderFlowDbContext database, ICurrentUser c
     private static StockMovementResponse Response(StockMovement movement) => new(movement.Id, movement.ProductId, movement.Operation,
         movement.OperationId, movement.Kind, movement.ActorKind, movement.ActorUserId, movement.Reason, movement.OnHandDelta,
         movement.ReservedDelta, movement.OnHandBefore, movement.ReservedBefore, movement.OnHandAfter, movement.ReservedAfter,
-        movement.Revision, movement.OccurredAt);
+        movement.Revision, movement.OccurredAt, movement.OrderId, movement.ReservationId);
 
     private static ApplicationFailureException Invalid(string field, string message) =>
         new(ApplicationError.ValidationFailed, new Dictionary<string, string[]> { [field] = [message] });

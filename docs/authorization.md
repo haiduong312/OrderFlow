@@ -1,6 +1,6 @@
 # Resource authorization — milestone 06
 
-This milestone provides reusable policies/handlers, an application-facing identity abstraction and explicit API denial mapping. It creates no Order entity, Order endpoint, admin CRUD or migration. Representative resources/controllers live only in the integration test assembly. [ADR-011](adr/0011-resource-authorization.md) records the decisions; [authentication](authentication.md) describes the existing Identity cookies/CSRF.
+This milestone provides reusable policies/handlers, an application-facing identity abstraction and explicit API denial mapping. Milestone 06 originally created no Order entity/endpoint; milestone 12 now integrates actual owner-constrained checkout detail reads as documented below. Representative resources/controllers live only in the integration test assembly. [ADR-011](adr/0011-resource-authorization.md) records the decisions; [authentication](authentication.md) describes the existing Identity cookies/CSRF.
 
 ## Components and boundaries
 
@@ -80,3 +80,7 @@ Use the same --artifacts-path across restore/build/test if you build outside the
 Focused policy cases exercise roles/ownership, null/wrong-type resources, invalid/duplicate IDs, ambiguous identities, unauthenticated role claims, no request context and cancellation. HTTP cases persist generated users with real Identity stores and authenticate through the production login endpoint, cookie handler and CSRF flow; no test authentication scheme/bypass is installed. Only representative resources use an isolated test dictionary, not EF InMemory. Missing/not-owned HTTP problems compare equal except traceId; spoofed query/header userId/role cannot override the cookie. Admin still needs CSRF and gets 409 for the test resource's closed-state rule.
 
 Run the normal API and request /_tests/resource-authorization/customer/{a-generated-uuid}: it must be 404 because no test application part is registered. No production URL can be used to exercise a fake Order or change representative data. Actual production ownership walkthroughs are deferred until Order endpoints exist; the auth curl/browser session walkthrough remains in authentication.md.
+
+## Actual Order detail integration (12)
+
+POST /api/orders and GET /api/orders/{id} now require the existing CustomerOnly policy. The detail query constrains both order ID and authenticated UserId in PostgreSQL; other-owner/missing returns the same 404, and Admin-only users remain 403 on this Customer path. Checkout and successful replay require the normal antiforgery cookie/token pair. Owner/user/role fields are never accepted in the body. Real PostgreSQL HTTP tests cover these paths; representative-resource probes remain useful policy contract tests. Order listing/cancellation/Admin inspection remain later features. See [checkout guide](checkout.md).

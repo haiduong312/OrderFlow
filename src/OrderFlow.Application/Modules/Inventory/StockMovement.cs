@@ -3,18 +3,21 @@ using OrderFlow.Application.Common.Time;
 
 namespace OrderFlow.Application.Modules.Inventory;
 
-public enum StockMovementKind { Initialization, Receipt, Adjustment }
-public enum StockActorKind { System, Admin }
+public enum StockMovementKind { Initialization, Receipt, Adjustment, Reservation }
+public enum StockActorKind { System, Admin, Customer }
 
 public sealed class StockMovement
 {
     public const string InitializationOperation = "InitializeInventory:v1";
     public const string StockChangeOperation = "ChangeStock:v1";
+    public const string ReservationOperation = "ReserveStock:v1";
     private StockMovement() { }
     public Guid Id { get; private set; }
     public Guid ProductId { get; private set; }
     public string Operation { get; private set; } = "";
     public Guid OperationId { get; private set; }
+    public Guid? OrderId { get; private set; }
+    public Guid? ReservationId { get; private set; }
     public StockMovementKind Kind { get; private set; }
     public StockActorKind ActorKind { get; private set; }
     public Guid? ActorUserId { get; private set; }
@@ -53,6 +56,17 @@ public sealed class StockMovement
         OnHandDelta = delta, ReservedDelta = 0, OnHandBefore = beforeOnHand, ReservedBefore = reserved,
         OnHandAfter = afterOnHand, ReservedAfter = reserved, Revision = revision,
         OccurredAt = BusinessTime.ToUtcMicroseconds(now)
+    };
+
+    internal static StockMovement Reserve(InventoryReservation reservation, Guid actorId,
+        int onHand, int reserved, long revision) => new()
+    {
+        Id = Guid.NewGuid(), ProductId = reservation.ProductId, Operation = ReservationOperation,
+        OperationId = reservation.Id, OrderId = reservation.OrderId, ReservationId = reservation.Id,
+        Kind = StockMovementKind.Reservation, ActorKind = StockActorKind.Customer, ActorUserId = actorId,
+        Reason = "Stock reserved for checkout", OnHandDelta = 0, ReservedDelta = reservation.Quantity,
+        OnHandBefore = onHand, OnHandAfter = onHand, ReservedBefore = reserved,
+        ReservedAfter = reserved + reservation.Quantity, Revision = revision, OccurredAt = reservation.CreatedAt
     };
 
     private static ApplicationFailureException Invalid(string field, string message) =>

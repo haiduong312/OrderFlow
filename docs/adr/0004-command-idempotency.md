@@ -1,6 +1,6 @@
 # ADR-004: Persist original successful command responses
 
-Date: 2026-10-30. Status: Accepted.
+Date: 2026-10-30. Status: Accepted. The duplicate-grouping sentence below is superseded by [ADR-015](0015-idempotent-checkout.md), which rejects duplicate product IDs for the first implemented checkout API. Other replay/durability decisions remain accepted.
 
 ## Context
 

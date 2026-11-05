@@ -28,6 +28,7 @@ public class HttpFoundationTests
     [InlineData(ApplicationError.SkuConflict, 409, "sku_conflict")]
     [InlineData(ApplicationError.StockLimitExceeded, 409, "stock_limit_exceeded")]
     [InlineData(ApplicationError.OrderExpired, 409, "order_expired")]
+    [InlineData(ApplicationError.ServiceUnavailable, 503, "service_unavailable")]
     public async Task Expected_failures_have_explicit_status_codes(ApplicationError error, int status, string code)
     {
         await using var factory = new FoundationApiFactory();

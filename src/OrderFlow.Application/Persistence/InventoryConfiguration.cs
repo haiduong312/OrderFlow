@@ -44,12 +44,19 @@ public sealed class StockMovementConfiguration : IEntityTypeConfiguration<StockM
                 ("Kind" = 'Initialization' AND "Operation" = 'InitializeInventory:v1'
                  AND "OperationId" = "ProductId" AND "ActorKind" = 'System' AND "ActorUserId" IS NULL
                  AND "Revision" = 0 AND "OnHandBefore" = 0 AND "OnHandAfter" = 0
-                 AND "ReservedBefore" = 0 AND "ReservedAfter" = 0 AND "OnHandDelta" = 0 AND "ReservedDelta" = 0)
+                 AND "ReservedBefore" = 0 AND "ReservedAfter" = 0 AND "OnHandDelta" = 0 AND "ReservedDelta" = 0
+                 AND "OrderId" IS NULL AND "ReservationId" IS NULL)
                 OR
                 ("Kind" IN ('Receipt','Adjustment') AND "Operation" = 'ChangeStock:v1'
                  AND "ActorKind" = 'Admin' AND "ActorUserId" IS NOT NULL AND "Revision" > 0
                  AND "ReservedDelta" = 0 AND "OnHandDelta" <> 0
-                 AND ("Kind" <> 'Receipt' OR "OnHandDelta" > 0))
+                 AND ("Kind" <> 'Receipt' OR "OnHandDelta" > 0)
+                 AND "OrderId" IS NULL AND "ReservationId" IS NULL)
+                OR
+                ("Kind" = 'Reservation' AND "Operation" = 'ReserveStock:v1'
+                 AND "ActorKind" = 'Customer' AND "ActorUserId" IS NOT NULL AND "Revision" > 0
+                 AND "OrderId" IS NOT NULL AND "ReservationId" IS NOT NULL AND "OperationId" = "ReservationId"
+                 AND "OnHandDelta" = 0 AND "ReservedDelta" BETWEEN 1 AND 1000)
                 """);
         });
         builder.HasKey(movement => movement.Id);
@@ -60,6 +67,10 @@ public sealed class StockMovementConfiguration : IEntityTypeConfiguration<StockM
         builder.Property(movement => movement.Reason).IsRequired().HasMaxLength(500);
         builder.HasOne<InventoryBalance>().WithMany().HasForeignKey(movement => movement.ProductId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(movement => movement.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<InventoryReservation>().WithMany()
+            .HasForeignKey(movement => new { movement.ReservationId, movement.OrderId, movement.ProductId })
+            .HasPrincipalKey(reservation => new { reservation.Id, reservation.OrderId, reservation.ProductId })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(movement => new { movement.Operation, movement.OperationId }).IsUnique().HasDatabaseName("UX_StockMovements_Operation");
         builder.HasIndex(movement => new { movement.ProductId, movement.Revision }).IsUnique().IsDescending(false, true)
             .HasDatabaseName("UX_StockMovements_Product_Revision");
