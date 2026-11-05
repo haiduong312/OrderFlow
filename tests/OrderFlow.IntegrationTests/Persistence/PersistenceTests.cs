@@ -19,18 +19,18 @@ namespace OrderFlow.IntegrationTests.Persistence;
 
 [Collection("PostgreSQL")]
 [Trait("Category", "PostgreSQL")]
-public sealed class PersistenceTests(PostgresDatabase database)
+public sealed class PersistenceTests(PostgresServer server) : PostgresTest(server)
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 2, 1, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public async Task Initial_migration_and_important_database_objects_exist()
     {
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         Assert.Equal(3, (await context.Database.GetAppliedMigrationsAsync()).Count());
         Assert.Empty(await context.Database.GetPendingMigrationsAsync());
         Assert.False(context.Database.HasPendingModelChanges());
-        await using var connection = new NpgsqlConnection(database.ConnectionString);
+        await using var connection = new NpgsqlConnection(Database.ConnectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand("""
             SELECT indexname FROM pg_indexes WHERE schemaname IN ('identity','messaging')
@@ -55,21 +55,21 @@ public sealed class PersistenceTests(PostgresDatabase database)
         var other = await AddUser();
         var body = Encoding.UTF8.GetBytes("{\n  \"id\":\"snapshot\", \"amount\":\"12.50\"\n}");
         var record = Completed(user.Id, "CreateOrder:v1", "same-key", body);
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             context.AddRange(record, Completed(user.Id, "Other:v1", "same-key"),
                 Completed(other.Id, "CreateOrder:v1", "same-key"), Completed(user.Id, "CreateOrder:v1", "SAME-KEY"));
             await context.SaveChangesAsync();
         }
 
-        await using (var duplicate = database.CreateContext())
+        await using (var duplicate = Database.CreateContext())
         {
             duplicate.Add(Completed(user.Id, "CreateOrder:v1", "same-key"));
             var failure = await Assert.ThrowsAsync<DbUpdateException>(() => duplicate.SaveChangesAsync());
             AssertPostgres(failure, PostgresErrorCodes.UniqueViolation, "UX_Idempotency_User_Operation_Key");
         }
 
-        await using var read = database.CreateContext();
+        await using var read = Database.CreateContext();
         var saved = await read.IdempotencyRecords.AsNoTracking().SingleAsync(row => row.Id == record.Id);
         Assert.Equal(body, saved.ResponseBody);
         Assert.Equal(SHA256.HashData(Encoding.UTF8.GetBytes(saved.CanonicalRequest)), saved.RequestHash);
@@ -90,7 +90,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
         await ExpectInsertFailure(snapshot, PostgresErrorCodes.CheckViolation, "CK_Idempotency_Snapshot");
         await ExpectInsertFailure(Completed(Guid.NewGuid(), "foreign", "key"), PostgresErrorCodes.ForeignKeyViolation,
             "FK_IdempotencyRecords_Users_UserId");
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         context.Add(Completed(user.Id, "retained", "key"));
         await context.SaveChangesAsync();
         // Clear dependents so this assertion reaches PostgreSQL rather than EF's client-side restrict guard.
@@ -105,7 +105,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
     {
         var user = await AddUser();
         var record = IdempotencyRecord.Create(user.Id, "immutable", "key", "{}", Now);
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         await using var transaction = await context.Database.BeginTransactionAsync();
         context.Add(record);
         await context.SaveChangesAsync();
@@ -121,7 +121,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
     public async Task Outbox_event_producer_effect_and_inbox_consumer_identity_are_independent()
     {
         var message = Outbox();
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             context.AddRange(message, Inbox("one", message.EventId), Inbox("two", message.EventId), Inbox("external", Guid.NewGuid()));
             await context.SaveChangesAsync();
@@ -165,7 +165,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
         var user = await AddUser();
         var outbox = Outbox();
         var incoming = Inbox("transaction", Guid.NewGuid());
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             await using var transaction = await context.Database.BeginTransactionAsync();
             (await context.Users.SingleAsync(row => row.Id == user.Id)).PhoneNumberConfirmed = true;
@@ -174,7 +174,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
             await transaction.RollbackAsync();
         }
 
-        await using (var read = database.CreateContext())
+        await using (var read = Database.CreateContext())
         {
             Assert.False((await read.Users.SingleAsync(row => row.Id == user.Id)).PhoneNumberConfirmed);
             Assert.False(await read.OutboxMessages.AnyAsync(row => row.EventId == outbox.EventId));
@@ -182,7 +182,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
             Assert.False(await read.ProcessedMessages.AnyAsync(row => row.MessageId == incoming.MessageId));
         }
 
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             await using var transaction = await context.Database.BeginTransactionAsync();
             (await context.Users.SingleAsync(row => row.Id == user.Id)).PhoneNumberConfirmed = true;
@@ -193,7 +193,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
             await transaction.CommitAsync();
         }
 
-        await using var committed = database.CreateContext();
+        await using var committed = Database.CreateContext();
         Assert.True((await committed.Users.SingleAsync(row => row.Id == user.Id)).PhoneNumberConfirmed);
         Assert.True(await committed.OutboxMessages.AnyAsync(row => row.EventId == outbox.EventId));
         Assert.True(await committed.IdempotencyRecords.AnyAsync(row => row.UserId == user.Id));
@@ -205,7 +205,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
     {
         var value = Now.ToOffset(TimeSpan.FromHours(7)).AddTicks(19);
         var user = await AddUser(value);
-        await using (var read = database.CreateContext())
+        await using (var read = Database.CreateContext())
         {
             var timestamp = (await read.Users.SingleAsync(row => row.Id == user.Id)).CreatedAt;
             Assert.Equal(TimeSpan.Zero, timestamp.Offset);
@@ -213,7 +213,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
         }
 
         // A test-only temporary table proves shared future money mappings without inventing a catalog entity.
-        await using var probe = new MoneyProbeContext(database.Options());
+        await using var probe = new MoneyProbeContext(Database.Options());
         var property = probe.Model.FindEntityType(typeof(MoneyProbe))!.FindProperty(nameof(MoneyProbe.Amount))!;
         Assert.Equal(18, property.GetPrecision());
         Assert.Equal(2, property.GetScale());
@@ -229,7 +229,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
     [Fact]
     public async Task Explicit_role_seed_is_repeatable_and_creates_no_default_accounts()
     {
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         var users = await context.Users.CountAsync();
         await DevelopmentSeeder.SeedRolesAsync(context, CancellationToken.None);
         await DevelopmentSeeder.SeedRolesAsync(context, CancellationToken.None);
@@ -242,7 +242,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
     {
         await using var api = new WebApplicationFactory<Api.Program>().WithWebHostBuilder(builder =>
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["ConnectionStrings:OrderFlow"] = database.ConnectionString })));
+                new Dictionary<string, string?> { ["ConnectionStrings:OrderFlow"] = Database.ConnectionString })));
         using var client = api.CreateClient();
         await using var first = api.Services.CreateAsyncScope();
         await using var second = api.Services.CreateAsyncScope();
@@ -255,7 +255,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
         Assert.True((await manager.CreateAsync(user)).Succeeded);
         Assert.NotNull(await context.Users.SingleOrDefaultAsync(row => row.Id == user.Id));
 
-        using var worker = WorkerHost.Build(["--ConnectionStrings:OrderFlow", database.ConnectionString]);
+        using var worker = WorkerHost.Build(["--ConnectionStrings:OrderFlow", Database.ConnectionString]);
         await using var workerScope = worker.Services.CreateAsyncScope();
         var workerContext = workerScope.ServiceProvider.GetRequiredService<OrderFlowDbContext>();
         Assert.NotSame(context, workerContext);
@@ -266,7 +266,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
     private async Task<ApplicationUser> AddUser(DateTimeOffset? created = null)
     {
         var user = User(created ?? Now);
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         context.Users.Add(user);
         await context.SaveChangesAsync();
         return user;
@@ -300,7 +300,7 @@ public sealed class PersistenceTests(PostgresDatabase database)
 
     private async Task ExpectInsertFailure(object entity, string sqlState, string constraint)
     {
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         context.Add(entity);
         var failure = await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
         AssertPostgres(failure, sqlState, constraint);

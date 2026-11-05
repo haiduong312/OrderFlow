@@ -12,6 +12,19 @@ namespace OrderFlow.IntegrationTests;
 
 public class CompositionSmokeTests
 {
+    [Theory]
+    [InlineData("/_tests/auth/admin")]
+    [InlineData("/_tests/auth/unsafe")]
+    [InlineData("/_tests/resource-authorization/customer/00000000-0000-0000-0000-000000000001")]
+    public async Task Production_host_does_not_discover_test_probe_controllers(string path)
+    {
+        await using var factory = new WebApplicationFactory<Api.Program>()
+            .WithWebHostBuilder(builder => builder.UseEnvironment(Environments.Production));
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     [Fact]
     public async Task Api_liveness_returns_healthy_without_external_services()
     {

@@ -10,7 +10,7 @@ namespace OrderFlow.IntegrationTests.Catalog;
 
 [Collection("PostgreSQL")]
 [Trait("Category", "PostgreSQL")]
-public sealed class CatalogPersistenceTests(PostgresDatabase database)
+public sealed class CatalogPersistenceTests(PostgresServer server) : PostgresTest(server)
 {
     [Fact]
     public async Task PostgreSQL_enforces_unique_normalized_sku_positive_price_names_versions_and_foreign_keys()
@@ -18,13 +18,13 @@ public sealed class CatalogPersistenceTests(PostgresDatabase database)
         var category = Category.Create("Constraints", DateTimeOffset.UnixEpoch);
         var sku = "SQL-" + Guid.NewGuid().ToString("N").ToUpperInvariant();
         var product = Product.Create(sku, "Original", "", UsdMoney.FromDecimal(1m), category.Id, DateTimeOffset.UnixEpoch);
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             context.Add(category);
             context.Add(product);
             await context.SaveChangesAsync();
         }
-        await using (var duplicate = database.CreateContext())
+        await using (var duplicate = Database.CreateContext())
         {
             duplicate.Add(Product.Create(sku.ToLowerInvariant(), "Duplicate", "", UsdMoney.FromDecimal(1m), category.Id, DateTimeOffset.UnixEpoch));
             var failure = await Assert.ThrowsAsync<DbUpdateException>(() => duplicate.SaveChangesAsync());
@@ -39,7 +39,7 @@ public sealed class CatalogPersistenceTests(PostgresDatabase database)
             ("UPDATE catalog.\"Products\" SET \"CreatedAt\" = 'infinity' WHERE \"Id\" = @id", "CK_Products_CreatedAt")
         })
         {
-            await using var connection = new NpgsqlConnection(database.ConnectionString);
+            await using var connection = new NpgsqlConnection(Database.ConnectionString);
             await connection.OpenAsync();
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("id", product.Id);
@@ -47,7 +47,7 @@ public sealed class CatalogPersistenceTests(PostgresDatabase database)
             Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
             Assert.Equal(constraint, exception.ConstraintName);
         }
-        await using (var connection = new NpgsqlConnection(database.ConnectionString))
+        await using (var connection = new NpgsqlConnection(Database.ConnectionString))
         {
             await connection.OpenAsync();
             await using var delete = new NpgsqlCommand("DELETE FROM catalog.\"Categories\" WHERE \"Id\" = @id", connection);
@@ -67,7 +67,7 @@ public sealed class CatalogPersistenceTests(PostgresDatabase database)
     [Fact]
     public async Task Mapping_has_expected_precision_indexes_utc_time_and_no_inventory_columns()
     {
-        await using var connection = new NpgsqlConnection(database.ConnectionString);
+        await using var connection = new NpgsqlConnection(Database.ConnectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand("""
             SELECT column_name, data_type, numeric_precision, numeric_scale
@@ -103,10 +103,10 @@ public sealed class CatalogPersistenceTests(PostgresDatabase database)
     public async Task Locked_category_check_reads_fresh_state_even_when_context_already_tracks_an_old_category()
     {
         var category = Category.Create("Fresh state", DateTimeOffset.UnixEpoch);
-        await using var first = database.CreateContext();
+        await using var first = Database.CreateContext();
         first.Add(category);
         await first.SaveChangesAsync();
-        await using (var other = database.CreateContext())
+        await using (var other = Database.CreateContext())
         {
             var service = new CatalogService(other, TimeProvider.System);
             await service.ArchiveCategoryAsync(category.Id, new ArchiveRequest { ExpectedVersion = 1 }, default);

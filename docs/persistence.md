@@ -103,22 +103,21 @@ docker compose --profile dev exec postgres psql -U orderflow_dev -d orderflow -c
 docker compose --profile dev exec postgres psql -U orderflow_dev -d orderflow -c '\d messaging."IdempotencyRecords"' -c '\d messaging."OutboxMessages"' -c '\d messaging."ProcessedMessages"'
 ```
 
-For the full solution suite, the test administrator needs CREATE DATABASE permission:
+For the full solution suite, Docker/Testcontainers now starts PostgreSQL automatically:
 
 ```bash
-export ORDERFLOW_TEST_POSTGRES="$ConnectionStrings__OrderFlow"
 dotnet test OrderFlow.slnx -c Release --no-build --no-restore
 ```
 
-The PostgreSQL fixture creates a unique `orderflow_test_<guid>` database, migrates it, tests real constraints/transactions/stores/converters, and drops **only that test-created database** afterward. It never drops or clears the configured development database or volume. Missing test configuration fails clearly, with no EF InMemory/SQLite fallback and no misleading skip. Provider tests run serially in their fixture; this milestone makes no race-test claim. Future concurrency tests still need deterministic gates at the contested SQL operation.
+An optional private `ORDERFLOW_TEST_POSTGRES` connection with CREATEDB overrides Docker and uses actual PostgreSQL. Each fact/theory row creates/migrates/drops its own generated `orderflow_test_<guid>` database, preserving the configured administrator database. The server/container is collection-scoped; database tests run serially and races use distinct contexts/requests. Missing Docker/PostgreSQL prerequisites fail explicitly, with no fake provider or success skip. See [testing guide](testing.md) for exact lifecycle budgets, cleanup, authentication/time helpers, safe synchronization boundaries and all test commands.
 
-For the external-service-free HTTP/primitive/composition subset only:
+For the external-service-free subset only:
 
 ```bash
 dotnet test OrderFlow.slnx -c Release --no-build --no-restore --filter 'Category!=PostgreSQL'
 ```
 
-Current suite: 43 unit + 49 prior HTTP/composition + 10 PostgreSQL tests = **102 tests**. The new unit coverage checks snapshot completion guards/buffer isolation. SQL coverage includes clean migration/model drift, named indexes/constraints, user-scoped unique keys, snapshot bytes/hash/immutability, FK insertion/deletion protection, independent event/consumer identities, invalid lease/state/attempt metadata, shared commit/rollback, UTC/precision roundtrip, repeatable roles-only seed, and scoped context/Identity store resolution from both hosts. No auth/ownership/order/broker correctness is claimed.
+Current acceptance and exact test results are recorded in [implementation status](implementation-status.md). The original persistence cases still exercise actual migration/model drift, named indexes/constraints, response bytes/hash/immutability, FKs, event/consumer identities, invalid lease/state metadata, shared commit/rollback, UTC/precision roundtrip, repeatable roles-only seed and scoped context/Identity storage. Later Catalog/Inventory/Identity/resource-policy tests use the same per-case harness; no Order/broker behavior is implied.
 
 ## Persistent volume and manual reset
 

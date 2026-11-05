@@ -13,12 +13,12 @@ namespace OrderFlow.IntegrationTests.Authorization;
 
 [Collection("PostgreSQL")]
 [Trait("Category", "PostgreSQL")]
-public sealed class ResourceAuthorizationHttpTests(PostgresDatabase database)
+public sealed class ResourceAuthorizationHttpTests(PostgresServer server) : PostgresTest(server)
 {
     [Fact]
     public async Task Customer_reads_own_resource_and_other_customers_resource_is_indistinguishable_from_missing()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, ownerId) = await Browser(factory, "Customer");
         using var browser = client;
         var own = Store(factory).Add(ownerId);
@@ -38,7 +38,7 @@ public sealed class ResourceAuthorizationHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Anonymous_and_wrong_role_denials_do_not_depend_on_resource_existence()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (customerClient, customerId) = await Browser(factory, "Customer");
         var (adminClient, _) = await Browser(factory, "Admin");
         using var customer = customerClient;
@@ -63,7 +63,7 @@ public sealed class ResourceAuthorizationHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Admin_can_read_any_resource_on_admin_path_but_missing_stays_404()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await Browser(factory, "Admin");
         using var admin = client;
         var resource = Store(factory).Add(Guid.NewGuid());
@@ -76,7 +76,7 @@ public sealed class ResourceAuthorizationHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Dual_role_admin_must_still_own_resources_on_customer_path()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, id) = await Browser(factory, "Admin", "Customer");
         using var browser = client;
         var own = Store(factory).Add(id);
@@ -92,7 +92,7 @@ public sealed class ResourceAuthorizationHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Query_and_headers_cannot_override_the_cookie_identity_or_role()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await Browser(factory, "Customer");
         using var browser = client;
         var other = Store(factory).Add(Guid.NewGuid());
@@ -110,7 +110,7 @@ public sealed class ResourceAuthorizationHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Admin_permission_never_bypasses_antiforgery_or_business_state_rules()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await Browser(factory, "Admin");
         using var admin = client;
         var resource = Store(factory).Add(Guid.NewGuid(), closed: true);
@@ -118,7 +118,7 @@ public sealed class ResourceAuthorizationHttpTests(PostgresDatabase database)
         using var noCsrf = await admin.PostAsync(url, null);
         await AuthenticationTests.Problem(noCsrf, 400, "antiforgery_failed");
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Add("X-CSRF-TOKEN", await AuthenticationTests.Token(admin));
+        request.Headers.Add("X-CSRF-TOKEN", await BrowserRequests.TokenAsync(admin));
         using var invalidTransition = await admin.SendAsync(request);
         await AuthenticationTests.Problem(invalidTransition, 409, "state_conflict");
         Assert.True(Store(factory).Find(resource.Id)!.IsClosed);

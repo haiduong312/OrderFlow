@@ -18,16 +18,16 @@ namespace OrderFlow.IntegrationTests.Inventory;
 
 [Collection("PostgreSQL")]
 [Trait("Category", "PostgreSQL")]
-public sealed class InventoryPersistenceTests(PostgresDatabase database)
+public sealed class InventoryPersistenceTests(PostgresServer server) : PostgresTest(server)
 {
     [Fact]
     public async Task Postgres_enforces_balance_bounds_and_history_is_append_only_even_for_raw_sql()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var product = await InventoryHttpTests.Product(admin);
-        await using var connection = new NpgsqlConnection(database.ConnectionString);
+        await using var connection = new NpgsqlConnection(Database.ConnectionString);
         await connection.OpenAsync();
         foreach (var expression in new[] { "\"OnHand\" = -1", "\"Reserved\" = -1", "\"Reserved\" = 1", "\"Revision\" = -1" })
         {
@@ -56,11 +56,11 @@ public sealed class InventoryPersistenceTests(PostgresDatabase database)
     [Fact]
     public async Task A_stale_tracked_balance_is_refreshed_under_lock_and_pending_changes_are_rejected()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, actorId) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var product = await InventoryHttpTests.Product(admin);
-        await using var first = database.CreateContext();
+        await using var first = Database.CreateContext();
         var tracked = await first.InventoryBalances.SingleAsync(balance => balance.ProductId == product.Id);
         Assert.Equal(0, tracked.OnHand);
         using var receipt = await CatalogHttpTests.Send(admin, HttpMethod.Post, InventoryHttpTests.Receipt(product.Id), new { operationId = Guid.NewGuid(), quantity = 10, reason = "Different process" });
@@ -70,19 +70,19 @@ public sealed class InventoryPersistenceTests(PostgresDatabase database)
         Assert.Equal(10, result.OnHandBefore);
         Assert.Equal(12, tracked.OnHand);
         Assert.Equal(EntityState.Unchanged, first.Entry(tracked).State);
-        await using (var read = database.CreateContext())
+        await using (var read = Database.CreateContext())
             Assert.Equal(12, (await read.InventoryBalances.AsNoTracking().SingleAsync(balance => balance.ProductId == product.Id)).OnHand);
         first.Entry(tracked).Property(balance => balance.OnHand).CurrentValue = 13;
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.AdjustAsync(product.Id,
             new StockAdjustmentRequest { OperationId = Guid.NewGuid(), Delta = 1, Reason = "Cannot discard pending edits" }, default));
-        await using var final = database.CreateContext();
+        await using var final = Database.CreateContext();
         Assert.Equal(12, (await final.InventoryBalances.AsNoTracking().SingleAsync(balance => balance.ProductId == product.Id)).OnHand);
     }
 
     [Fact]
     public async Task Movement_write_failure_rolls_back_balance_and_returns_sanitized_500()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var product = await InventoryHttpTests.Product(admin);
@@ -90,7 +90,7 @@ public sealed class InventoryPersistenceTests(PostgresDatabase database)
         var suffix = Guid.NewGuid().ToString("N");
         var function = "reject_test_movement_" + suffix;
         var trigger = "TR_TestMovement_" + suffix;
-        await using var setup = new NpgsqlConnection(database.ConnectionString);
+        await using var setup = new NpgsqlConnection(Database.ConnectionString);
         await setup.OpenAsync();
         // DDL identifiers/literal below are generated UUIDs, never request values.
         await using var install = new NpgsqlCommand($"""
@@ -130,7 +130,7 @@ public sealed class InventoryPersistenceTests(PostgresDatabase database)
     {
         var category = Category.Create("Atomic creation", DateTimeOffset.UnixEpoch);
         var product = Product.Create("ATOMIC-" + Guid.NewGuid().ToString("N"), "Product", "", UsdMoney.FromDecimal(1m), category.Id, DateTimeOffset.UnixEpoch);
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             await using var transaction = await context.Database.BeginTransactionAsync();
             context.Add(category);
@@ -140,7 +140,7 @@ public sealed class InventoryPersistenceTests(PostgresDatabase database)
             Assert.True(await context.StockMovements.AnyAsync(movement => movement.ProductId == product.Id));
             await transaction.RollbackAsync();
         }
-        await using var read = database.CreateContext();
+        await using var read = Database.CreateContext();
         Assert.False(await read.Products.AnyAsync(row => row.Id == product.Id));
         Assert.False(await read.InventoryBalances.AnyAsync(row => row.ProductId == product.Id));
         Assert.False(await read.StockMovements.AnyAsync(row => row.ProductId == product.Id));
@@ -149,48 +149,32 @@ public sealed class InventoryPersistenceTests(PostgresDatabase database)
     [Fact]
     public async Task Upgrade_backfills_existing_active_and_archived_products_once()
     {
-        var name = "orderflow_inventory_upgrade_" + Guid.NewGuid().ToString("N");
-        await using var admin = new NpgsqlConnection(database.ConnectionString);
-        await admin.OpenAsync();
-        await using (var create = new NpgsqlCommand($"CREATE DATABASE \"{name}\"", admin)) await create.ExecuteNonQueryAsync();
-        try
-        {
-            var connection = new NpgsqlConnectionStringBuilder(database.ConnectionString) { Database = name };
-            var options = new DbContextOptionsBuilder<OrderFlowDbContext>();
-            PersistenceRegistration.Configure(options, connection.ConnectionString);
-            await using var context = new OrderFlowDbContext(options.Options);
-            await context.GetService<IMigrator>().MigrateAsync("20261103093358_AddCatalog");
-            var category = Category.Create("Legacy", DateTimeOffset.UnixEpoch);
-            var one = Product.Create("LEGACY-ONE", "One", "", UsdMoney.FromDecimal(1m), category.Id, DateTimeOffset.UnixEpoch);
-            var two = Product.Create("LEGACY-TWO", "Two", "", UsdMoney.FromDecimal(2m), category.Id, DateTimeOffset.UnixEpoch);
-            two.Archive(1);
-            context.AddRange(category, one, two);
-            await context.SaveChangesAsync();
-            await context.Database.MigrateAsync();
-            await context.Database.MigrateAsync();
-            var balances = await context.InventoryBalances.AsNoTracking().ToListAsync();
-            Assert.Equal(2, balances.Count);
-            Assert.All(balances, balance => { Assert.Equal(0, balance.OnHand); Assert.Equal(0, balance.Reserved); Assert.Equal(0, balance.Revision); });
-            var movements = await context.StockMovements.AsNoTracking().ToListAsync();
-            Assert.Equal(2, movements.Count);
-            Assert.All(movements, movement => { Assert.Equal(StockActorKind.System, movement.ActorKind); Assert.Equal(StockMovementKind.Initialization, movement.Kind); });
-            Assert.Equal(2, await context.Products.CountAsync());
-            Assert.False((await context.Products.AsNoTracking().SingleAsync(product => product.Id == two.Id)).IsActive);
-        }
-        finally
-        {
-            // This test owns only the uniquely generated DB it created above.
-            await using var drop = new NpgsqlCommand($"DROP DATABASE \"{name}\" WITH (FORCE)", admin);
-            await drop.ExecuteNonQueryAsync();
-        }
+        await using var upgrade = await Server.CreateDatabaseAsync("20261103093358_AddCatalog");
+        await using var context = upgrade.CreateContext();
+        var category = Category.Create("Legacy", DateTimeOffset.UnixEpoch);
+        var one = Product.Create("LEGACY-ONE", "One", "", UsdMoney.FromDecimal(1m), category.Id, DateTimeOffset.UnixEpoch);
+        var two = Product.Create("LEGACY-TWO", "Two", "", UsdMoney.FromDecimal(2m), category.Id, DateTimeOffset.UnixEpoch);
+        two.Archive(1);
+        context.AddRange(category, one, two);
+        await context.SaveChangesAsync();
+        await context.Database.MigrateAsync();
+        await context.Database.MigrateAsync();
+        var balances = await context.InventoryBalances.AsNoTracking().ToListAsync();
+        Assert.Equal(2, balances.Count);
+        Assert.All(balances, balance => { Assert.Equal(0, balance.OnHand); Assert.Equal(0, balance.Reserved); Assert.Equal(0, balance.Revision); });
+        var movements = await context.StockMovements.AsNoTracking().ToListAsync();
+        Assert.Equal(2, movements.Count);
+        Assert.All(movements, movement => { Assert.Equal(StockActorKind.System, movement.ActorKind); Assert.Equal(StockMovementKind.Initialization, movement.Kind); });
+        Assert.Equal(2, await context.Products.CountAsync());
+        Assert.False((await context.Products.AsNoTracking().SingleAsync(product => product.Id == two.Id)).IsActive);
     }
 
     [Fact]
     public async Task Locks_require_a_transaction_and_revision_exhaustion_has_no_effect()
     {
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         await Assert.ThrowsAsync<InvalidOperationException>(() => InventoryLocking.LockAsync(context, [Guid.NewGuid()], default));
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var product = await InventoryHttpTests.Product(admin);

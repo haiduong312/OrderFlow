@@ -14,7 +14,7 @@ namespace OrderFlow.IntegrationTests.Catalog;
 
 [Collection("PostgreSQL")]
 [Trait("Category", "PostgreSQL")]
-public sealed class CatalogHttpTests(PostgresDatabase database)
+public sealed class CatalogHttpTests(PostgresServer server) : PostgresTest(server)
 {
     internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -26,7 +26,7 @@ public sealed class CatalogHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Admin_creates_updates_and_archives_products_with_string_money_and_immutable_sku()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var category = await Category(admin);
@@ -77,7 +77,7 @@ public sealed class CatalogHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Category_archival_hides_children_without_cascading_and_restore_respects_product_archival()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var category = await Category(admin);
@@ -115,7 +115,7 @@ public sealed class CatalogHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Catalog_mutations_require_admin_and_antiforgery_while_public_reads_are_anonymous()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (adminClient, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         var (customerClient, _) = await AuthenticatedBrowser.CreateAsync(factory, "Customer");
         using var admin = adminClient;
@@ -164,7 +164,7 @@ public sealed class CatalogHttpTests(PostgresDatabase database)
     [InlineData("categoryId", "\"00000000-0000-0000-0000-000000000000\"")]
     public async Task Product_validation_rejects_invalid_fields_without_writes(string field, string value)
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var category = await Category(admin);
@@ -173,7 +173,7 @@ public sealed class CatalogHttpTests(PostgresDatabase database)
         body[field] = JsonSerializer.Deserialize<JsonElement>(value);
         using var response = await Send(admin, HttpMethod.Post, "/api/admin/products", body);
         await AuthenticationTests.Problem(response, 400, "validation_failed");
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         Assert.False(await context.Products.AnyAsync(product => product.Sku == sku));
     }
 
@@ -185,7 +185,7 @@ public sealed class CatalogHttpTests(PostgresDatabase database)
     [InlineData("id", "\"11111111-1111-4111-8111-111111111111\"")]
     public async Task Product_update_rejects_inventory_and_immutable_fields(string field, string value)
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var category = await Category(admin);
@@ -207,7 +207,7 @@ public sealed class CatalogHttpTests(PostgresDatabase database)
     [InlineData("categoryId=invalid")]
     public async Task Invalid_query_returns_400(string query)
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         using var response = await client.GetAsync("/api/products?" + query);
         await AuthenticationTests.Problem(response, 400, "validation_failed");
@@ -216,7 +216,7 @@ public sealed class CatalogHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Missing_resources_and_categories_and_bounded_inputs_have_explicit_results()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         foreach (var body in new[] { new { name = " " }, new { name = new string('x', 201) } })
@@ -250,7 +250,7 @@ public sealed class CatalogHttpTests(PostgresDatabase database)
     internal static async Task<HttpResponseMessage> Send(HttpClient client, HttpMethod method, string path, object body, bool csrf = true)
     {
         using var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(body) };
-        if (csrf) request.Headers.Add("X-CSRF-TOKEN", await AuthenticationTests.Token(client));
+        if (csrf) request.Headers.Add("X-CSRF-TOKEN", await BrowserRequests.TokenAsync(client));
         return await client.SendAsync(request);
     }
 

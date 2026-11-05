@@ -13,12 +13,12 @@ namespace OrderFlow.IntegrationTests.Inventory;
 
 [Collection("PostgreSQL")]
 [Trait("Category", "PostgreSQL")]
-public sealed class InventoryHttpTests(PostgresDatabase database)
+public sealed class InventoryHttpTests(PostgresServer server) : PostgresTest(server)
 {
     [Fact]
     public async Task Products_start_at_zero_and_receipt_adjustment_append_actor_reason_and_snapshot()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, actorId) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var product = await Product(admin);
@@ -70,14 +70,14 @@ public sealed class InventoryHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Reserved_floor_is_enforced_and_rejections_leave_no_movement()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var product = await Product(admin);
         using var receipt = await CatalogHttpTests.Send(admin, HttpMethod.Post, Receipt(product.Id), new { operationId = Guid.NewGuid(), quantity = 10, reason = "Opening receipt" });
         Assert.Equal(HttpStatusCode.Created, receipt.StatusCode);
         // Fixture models an existing reservation; no production reservation mutation API exists yet.
-        await using (var setup = database.CreateContext())
+        await using (var setup = Database.CreateContext())
             await setup.Database.ExecuteSqlInterpolatedAsync($"UPDATE inventory.\"Balances\" SET \"Reserved\" = 7 WHERE \"ProductId\" = {product.Id}");
         using var denied = await CatalogHttpTests.Send(admin, HttpMethod.Post, Adjustment(product.Id), new { operationId = Guid.NewGuid(), delta = -4, reason = "Would touch reserved stock" });
         await AuthenticationTests.Problem(denied, 409, "insufficient_stock");
@@ -95,7 +95,7 @@ public sealed class InventoryHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Operation_replay_returns_original_movement_and_conflicting_actor_body_kind_or_product_is_409()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var product = await Product(admin);
@@ -124,7 +124,7 @@ public sealed class InventoryHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Stock_endpoints_require_admin_and_writes_require_csrf()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (adminClient, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         var (customerClient, _) = await AuthenticatedBrowser.CreateAsync(factory, "Customer");
         using var admin = adminClient;
@@ -168,7 +168,7 @@ public sealed class InventoryHttpTests(PostgresDatabase database)
     [InlineData("available", "10")]
     public async Task Receipt_validation_and_actor_or_derived_value_spoofing_are_rejected(string field, string value)
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var product = await Product(admin);
@@ -183,7 +183,7 @@ public sealed class InventoryHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Limits_missing_fields_and_archived_inventory_are_explicit()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         var (client, _) = await AuthenticatedBrowser.CreateAsync(factory, "Admin");
         using var admin = client;
         var product = await Product(admin);
@@ -210,7 +210,7 @@ public sealed class InventoryHttpTests(PostgresDatabase database)
     [Fact]
     public async Task Openapi_describes_inventory_and_available_as_read_only_response_data()
     {
-        await using var factory = new AuthApiFactory(database, "Development");
+        await using var factory = new AuthApiFactory(Database, "Development");
         using var client = factory.Browser();
         var document = await client.GetFromJsonAsync<JsonElement>("/openapi/v1.json");
         var schemas = document.GetProperty("components").GetProperty("schemas");

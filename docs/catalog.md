@@ -111,7 +111,7 @@ curl --get --fail-with-body --data-urlencode 'q=KEYBOARD' \
 ```
 
 4. Save returned product ID/version, PUT a new name/price/categoryId/isActive with expectedVersion=1; expect 200/version=2. Repeat old version: 409. POST its /archive with expectedVersion=2: public detail becomes 404, admin detail remains 200. Recreate the same SKU: 409, even archived. Archive/restore the category and verify child visibility described above. A Customer cookie must get 403 on admin paths; omitting Admin CSRF must get 400. Include onHand or sku in a PUT: 400. Run only against sample data you intentionally create.
-5. Verify tests with private ORDERFLOW_TEST_POSTGRES:
+5. Verify tests with Docker running (or optional private ORDERFLOW_TEST_POSTGRES); see [testing guide](testing.md):
 
 ```bash
 dotnet test OrderFlow.slnx -c Release --no-build --no-restore

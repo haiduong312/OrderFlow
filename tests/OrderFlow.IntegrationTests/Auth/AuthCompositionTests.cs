@@ -24,7 +24,7 @@ public sealed class AuthCompositionTests
         {
             BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false
         });
-        Assert.False(string.IsNullOrWhiteSpace(await AuthenticationTests.Token(client)));
+        Assert.False(string.IsNullOrWhiteSpace(await BrowserRequests.TokenAsync(client)));
         using var response = await client.GetAsync("/api/auth/me");
         await AuthenticationTests.Problem(response, 401, "unauthenticated");
         Assert.Null(response.Headers.Location);

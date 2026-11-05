@@ -67,7 +67,7 @@ curl --fail-with-body -i "$ORDERFLOW_AUTH_URL/api/products/$ORDERFLOW_PRODUCT_ID
 ```
 
 3. With a new operation UUID, POST /stock-adjustments with a valid JSON body containing the new operationId, delta=-3 and reason="Damaged units"; expect OnHand/Available=7, a new revision and movement. Delta=-8 now gives 409 with balance/history unchanged. Same old operation ID with a changed body gives 409. Missing CSRF gives 400; Customer gets 403; actorUserId/available in body gives 400. Fetch /inventory for current stock after replay rather than treating an old movement snapshot as current.
-4. Run PostgreSQL-backed tests with private ORDERFLOW_TEST_POSTGRES:
+4. Run PostgreSQL-backed tests with Docker running (or optional private ORDERFLOW_TEST_POSTGRES); see [testing guide](testing.md):
 
 ```bash
 dotnet test OrderFlow.slnx -c Release --no-build --no-restore

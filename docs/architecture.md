@@ -1,6 +1,6 @@
 # OrderFlow architecture
 
-Status: accepted design. Milestones 02/02a/03/04/06/07/08 implement host/HTTP/persistence, Identity/resource authorization, Catalog and Inventory balances/stock commands; full order reservation/payment/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
+Status: accepted design. Milestones 02/02a/03/04/06/07/08 implement host/HTTP/persistence, Identity/resource authorization, Catalog and Inventory balances/stock commands; supplemental 08a strengthens the integration-test harness. Full order reservation/payment/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
 
 ## 1. Deployment and code organization
 
@@ -50,6 +50,8 @@ Milestone 06 adds ICurrentUser/IOwnedResource contracts in Application/Common/Au
 Milestone 07 adds Catalog entities/use cases and explicit EF mappings in the shared context, plus public/admin API controllers and feature-specific OpenAPI schemas. [ADR-012](adr/0012-catalog-products-categories.md) documents the category lock level, archive visibility and baseline substring-search scan behavior. Inventory is introduced by milestone 08, not by the Catalog milestone.
 
 Milestone 08 adds inventory.Balances/StockMovements, product-trigger initialization/backfill and PostgreSQL append-only guards. InventoryService owns audited stock changes under ordered balance row locks and shares the scoped context/transaction. It deliberately refreshes unchanged tracked balances; no ExecuteUpdate mixing. [ADR-013](adr/0013-inventory-ledger-and-stock-commands.md) and [Inventory guide](inventory.md) describe operation replay, actor identity and scope changes.
+
+Supplemental milestone 08a adds the [reusable integration harness](testing.md): collection-owned Testcontainers PostgreSQL, per-case migrated databases, real cookie/CSRF helpers, replaceable business time and pre-start hosted-service control. [ADR-014](adr/0014-integration-test-harness.md) records safe race boundaries and lifecycle/parallel rules. No production business or schema change.
 
 ## 2. Platform and version policy
 

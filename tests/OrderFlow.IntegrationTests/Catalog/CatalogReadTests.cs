@@ -11,7 +11,7 @@ namespace OrderFlow.IntegrationTests.Catalog;
 
 [Collection("PostgreSQL")]
 [Trait("Category", "PostgreSQL")]
-public sealed class CatalogReadTests(PostgresDatabase database)
+public sealed class CatalogReadTests(PostgresServer server) : PostgresTest(server)
 {
     [Fact]
     public async Task Search_is_case_insensitive_literal_substring_and_category_filter_is_composed()
@@ -26,13 +26,13 @@ public sealed class CatalogReadTests(PostgresDatabase database)
             Product.Create("KEY-" + Guid.NewGuid().ToString("N"), marker + " MixedCase", null, UsdMoney.FromDecimal(2m), second.Id, now),
             Product.Create("KEY-" + Guid.NewGuid().ToString("N"), marker + " 100%_\\ literal", null, UsdMoney.FromDecimal(3m), first.Id, now)
         };
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             context.AddRange(first, second);
             context.AddRange(products);
             await context.SaveChangesAsync();
         }
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         var byName = (await client.GetFromJsonAsync<CatalogPage<ProductResponse>>("/api/products?q=" + Uri.EscapeDataString(marker.ToUpperInvariant() + " MIXEDCASE"), CatalogHttpTests.JsonOptions))!;
         Assert.Equal(2, byName.TotalCount);
@@ -57,13 +57,13 @@ public sealed class CatalogReadTests(PostgresDatabase database)
         var category = Category.Create("Paging " + Guid.NewGuid().ToString("N"), now);
         var products = Enumerable.Range(0, 5).Select(_ => Product.Create("PAGE-" + Guid.NewGuid().ToString("N"),
             "Same name", null, UsdMoney.FromDecimal(4m), category.Id, now)).ToArray();
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             context.Add(category);
             context.AddRange(products);
             await context.SaveChangesAsync();
         }
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         foreach (var sort in new[] { "newest", "name", "price-asc", "price-desc" })
         {
@@ -92,7 +92,7 @@ public sealed class CatalogReadTests(PostgresDatabase database)
         var empty = (await client.GetFromJsonAsync<CatalogPage<ProductResponse>>("/api/products?page=4&pageSize=2&categoryId=" + category.Id, CatalogHttpTests.JsonOptions))!;
         Assert.Empty(empty.Items);
         Assert.Equal(5, empty.TotalCount);
-        await using var read = database.CreateContext();
+        await using var read = Database.CreateContext();
         var service = new CatalogService(read, TimeProvider.System);
         await service.ProductsAsync(new ProductQuery { CategoryId = category.Id }, false, default);
         await service.CategoriesAsync(new CatalogQuery(), false, default);
@@ -107,12 +107,12 @@ public sealed class CatalogReadTests(PostgresDatabase database)
         var marker = "categories-" + Guid.NewGuid().ToString("N");
         var categories = Enumerable.Range(0, 4).Select(_ => Category.Create(marker, DateTimeOffset.UnixEpoch)).ToArray();
         categories[0].Archive(1);
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             context.AddRange(categories);
             await context.SaveChangesAsync();
         }
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         var first = (await client.GetFromJsonAsync<CatalogPage<CategoryResponse>>("/api/categories?q=" + marker + "&sort=name&pageSize=2"))!;
         var second = (await client.GetFromJsonAsync<CatalogPage<CategoryResponse>>("/api/categories?q=" + marker + "&sort=name&pageSize=2&page=2"))!;
@@ -134,7 +134,7 @@ public sealed class CatalogReadTests(PostgresDatabase database)
     [Fact]
     public async Task Openapi_documents_catalog_requests_responses_money_and_bounded_query_inputs()
     {
-        await using var factory = new AuthApiFactory(database, "Development");
+        await using var factory = new AuthApiFactory(Database, "Development");
         using var client = factory.Browser();
         var document = await client.GetFromJsonAsync<JsonElement>("/openapi/v1.json");
         var paths = document.GetProperty("paths");

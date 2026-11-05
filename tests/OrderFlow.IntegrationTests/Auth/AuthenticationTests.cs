@@ -14,25 +14,25 @@ namespace OrderFlow.IntegrationTests.Auth;
 
 [Collection("PostgreSQL")]
 [Trait("Category", "PostgreSQL")]
-public sealed class AuthenticationTests(PostgresDatabase database)
+public sealed class AuthenticationTests(PostgresServer server) : PostgresTest(server)
 {
     [Fact]
     public async Task Register_login_me_and_logout_use_cookie_and_refresh_csrf_tokens()
     {
         await PrepareRoles();
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         var email = Email();
         var password = Password();
-        var anonymousToken = await Token(client);
-        using var registration = await Post(client, "register", new { email, password }, anonymousToken);
+        var anonymousToken = await BrowserRequests.TokenAsync(client);
+        using var registration = await BrowserRequests.PostAuthAsync(client, "register", new { email, password }, anonymousToken);
         Assert.Equal(HttpStatusCode.Created, registration.StatusCode);
         var created = await registration.Content.ReadFromJsonAsync<UserResponse>();
         Assert.Equal(new[] { "Customer" }, created!.Roles);
         using var anonymousMe = await client.GetAsync("/api/auth/me");
         await Problem(anonymousMe, 401, "unauthenticated");
 
-        using var login = await Post(client, "login", new { email, password }, anonymousToken);
+        using var login = await BrowserRequests.PostAuthAsync(client, "login", new { email, password }, anonymousToken);
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
         var cookie = Assert.Single(login.Headers.GetValues("Set-Cookie"), value => value.StartsWith("__Host-OrderFlow.Auth=", StringComparison.Ordinal));
         Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
@@ -44,16 +44,16 @@ public sealed class AuthenticationTests(PostgresDatabase database)
         Assert.Equal(created.Id, me!.Id);
         Assert.Equal(email, me.Email);
 
-        using var stale = await Post(client, "logout", new { }, anonymousToken);
+        using var stale = await BrowserRequests.PostAuthAsync(client, "logout", new { }, anonymousToken);
         await Problem(stale, 400, "antiforgery_failed");
-        var authenticatedToken = await Token(client);
-        using var logout = await Post(client, "logout", new { }, authenticatedToken);
+        var authenticatedToken = await BrowserRequests.TokenAsync(client);
+        using var logout = await BrowserRequests.PostAuthAsync(client, "logout", new { }, authenticatedToken);
         Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
         using var afterLogout = await client.GetAsync("/api/auth/me");
         await Problem(afterLogout, 401, "unauthenticated");
-        using var staleAuthenticated = await Post(client, "login", new { email, password }, authenticatedToken);
+        using var staleAuthenticated = await BrowserRequests.PostAuthAsync(client, "login", new { email, password }, authenticatedToken);
         await Problem(staleAuthenticated, 400, "antiforgery_failed");
-        Assert.False(string.IsNullOrWhiteSpace(await Token(client)));
+        Assert.False(string.IsNullOrWhiteSpace(await BrowserRequests.TokenAsync(client)));
 
         await using var scope = factory.Services.CreateAsyncScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -70,17 +70,17 @@ public sealed class AuthenticationTests(PostgresDatabase database)
     public async Task Duplicate_case_normalized_accounts_are_rejected_without_orphans()
     {
         await PrepareRoles();
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         var email = Email();
         var password = Password();
-        using var first = await Post(client, "register", new { email, password }, await Token(client));
+        using var first = await BrowserRequests.PostAuthAsync(client, "register", new { email, password }, await BrowserRequests.TokenAsync(client));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        using var duplicate = await Post(client, "register", new { email = email.ToUpperInvariant(), password }, await Token(client));
+        using var duplicate = await BrowserRequests.PostAuthAsync(client, "register", new { email = email.ToUpperInvariant(), password }, await BrowserRequests.TokenAsync(client));
         await Problem(duplicate, 400, "validation_failed");
-        using var login = await Post(client, "login", new { email = email.ToUpperInvariant(), password }, await Token(client));
+        using var login = await BrowserRequests.PostAuthAsync(client, "login", new { email = email.ToUpperInvariant(), password }, await BrowserRequests.TokenAsync(client));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         Assert.Equal(1, await context.Users.CountAsync(user => user.NormalizedEmail == email.ToUpperInvariant()));
     }
 
@@ -94,7 +94,7 @@ public sealed class AuthenticationTests(PostgresDatabase database)
     public async Task Registration_rejects_privileged_fields(string field, string value)
     {
         await PrepareRoles();
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         var email = Email();
         var payload = new Dictionary<string, object?>
@@ -103,9 +103,9 @@ public sealed class AuthenticationTests(PostgresDatabase database)
             ["password"] = Password(),
             [field] = JsonSerializer.Deserialize<JsonElement>(value)
         };
-        using var response = await Post(client, "register", payload, await Token(client));
+        using var response = await BrowserRequests.PostAuthAsync(client, "register", payload, await BrowserRequests.TokenAsync(client));
         await Problem(response, 400, "validation_failed");
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         Assert.False(await context.Users.AnyAsync(user => user.Email == email));
     }
 
@@ -114,16 +114,16 @@ public sealed class AuthenticationTests(PostgresDatabase database)
     [InlineData("login")]
     public async Task Missing_invalid_and_unpaired_csrf_are_rejected_for_anonymous_auth(string operation)
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         var payload = new { email = Email(), password = Password() };
-        using var missing = await Post(client, operation, payload, null);
+        using var missing = await BrowserRequests.PostAuthAsync(client, operation, payload, null);
         await Problem(missing, 400, "antiforgery_failed");
-        var valid = await Token(client);
-        using var invalid = await Post(client, operation, payload, "invalid-test-token");
+        var valid = await BrowserRequests.TokenAsync(client);
+        using var invalid = await BrowserRequests.PostAuthAsync(client, operation, payload, "invalid-test-token");
         await Problem(invalid, 400, "antiforgery_failed");
         using var differentBrowser = factory.Browser();
-        using var unpaired = await Post(differentBrowser, operation, payload, valid);
+        using var unpaired = await BrowserRequests.PostAuthAsync(differentBrowser, operation, payload, valid);
         await Problem(unpaired, 400, "antiforgery_failed");
     }
 
@@ -131,13 +131,13 @@ public sealed class AuthenticationTests(PostgresDatabase database)
     public async Task Missing_logout_csrf_is_rejected_and_does_not_end_session()
     {
         await PrepareRoles();
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         var payload = new { email = Email(), password = Password() };
-        using var registered = await Post(client, "register", payload, await Token(client));
-        using var login = await Post(client, "login", payload, await Token(client));
+        using var registered = await BrowserRequests.PostAuthAsync(client, "register", payload, await BrowserRequests.TokenAsync(client));
+        using var login = await BrowserRequests.PostAuthAsync(client, "login", payload, await BrowserRequests.TokenAsync(client));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
-        using var denied = await Post(client, "logout", new { }, null);
+        using var denied = await BrowserRequests.PostAuthAsync(client, "logout", new { }, null);
         await Problem(denied, 400, "antiforgery_failed");
         using var stillLoggedIn = await client.GetAsync("/api/auth/me");
         Assert.Equal(HttpStatusCode.OK, stillLoggedIn.StatusCode);
@@ -147,26 +147,26 @@ public sealed class AuthenticationTests(PostgresDatabase database)
     public async Task Invalid_credentials_and_lockout_return_same_generic_401()
     {
         await PrepareRoles();
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         var email = Email();
         var password = Password();
-        using var register = await Post(client, "register", new { email, password }, await Token(client));
+        using var register = await BrowserRequests.PostAuthAsync(client, "register", new { email, password }, await BrowserRequests.TokenAsync(client));
         Assert.Equal(HttpStatusCode.Created, register.StatusCode);
-        var token = await Token(client);
+        var token = await BrowserRequests.TokenAsync(client);
         for (var attempt = 0; attempt < 5; attempt++)
         {
-            using var failure = await Post(client, "login", new { email, password = Password() }, token);
+            using var failure = await BrowserRequests.PostAuthAsync(client, "login", new { email, password = Password() }, token);
             await Problem(failure, 401, "invalid_credentials");
         }
 
-        using var locked = await Post(client, "login", new { email, password }, token);
+        using var locked = await BrowserRequests.PostAuthAsync(client, "login", new { email, password }, token);
         var lockedBody = await Problem(locked, 401, "invalid_credentials");
-        using var unknown = await Post(client, "login", new { email = Email(), password }, token);
+        using var unknown = await BrowserRequests.PostAuthAsync(client, "login", new { email = Email(), password }, token);
         var unknownBody = await Problem(unknown, 401, "invalid_credentials");
         Assert.Equal(lockedBody.GetProperty("title").GetString(), unknownBody.GetProperty("title").GetString());
 
-        await using (var context = database.CreateContext())
+        await using (var context = Database.CreateContext())
         {
             var user = await context.Users.SingleAsync(user => user.Email == email);
             Assert.NotNull(user.LockoutEnd);
@@ -175,7 +175,7 @@ public sealed class AuthenticationTests(PostgresDatabase database)
             await context.SaveChangesAsync();
         }
 
-        using var unlocked = await Post(client, "login", new { email, password }, token);
+        using var unlocked = await BrowserRequests.PostAuthAsync(client, "login", new { email, password }, token);
         Assert.Equal(HttpStatusCode.OK, unlocked.StatusCode);
     }
 
@@ -183,16 +183,16 @@ public sealed class AuthenticationTests(PostgresDatabase database)
     public async Task Policies_return_401_or_403_without_login_redirects()
     {
         await PrepareRoles();
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         using var anonymous = await client.GetAsync("/_tests/auth/admin");
         await Problem(anonymous, 401, "unauthenticated");
         Assert.Null(anonymous.Headers.Location);
-        using var logout = await Post(client, "logout", new { }, null);
+        using var logout = await BrowserRequests.PostAuthAsync(client, "logout", new { }, null);
         await Problem(logout, 401, "unauthenticated");
         var payload = new { email = Email(), password = Password() };
-        using var registered = await Post(client, "register", payload, await Token(client));
-        using var login = await Post(client, "login", payload, await Token(client));
+        using var registered = await BrowserRequests.PostAuthAsync(client, "register", payload, await BrowserRequests.TokenAsync(client));
+        using var login = await BrowserRequests.PostAuthAsync(client, "login", payload, await BrowserRequests.TokenAsync(client));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
         using var forbidden = await client.GetAsync("/_tests/auth/admin");
         await Problem(forbidden, 403, "forbidden");
@@ -204,7 +204,7 @@ public sealed class AuthenticationTests(PostgresDatabase database)
     [Fact]
     public async Task Development_account_seed_requires_opt_in_and_never_promotes_existing_customer()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         await using var scope = factory.Services.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<OrderFlowDbContext>();
@@ -223,7 +223,7 @@ public sealed class AuthenticationTests(PostgresDatabase database)
         Assert.False(await DevelopmentAccountSeeder.SeedAsync("Development", options, users, context, clock, default));
         Assert.Equal(originalHash, stored.PasswordHash);
 
-        using var login = await Post(client, "login", new { email = options.Email, password }, await Token(client));
+        using var login = await BrowserRequests.PostAuthAsync(client, "login", new { email = options.Email, password }, await BrowserRequests.TokenAsync(client));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
         using var admin = await client.GetAsync("/_tests/auth/admin");
         Assert.Equal(HttpStatusCode.OK, admin.StatusCode);
@@ -243,7 +243,7 @@ public sealed class AuthenticationTests(PostgresDatabase database)
         options.Email = Email();
         options.Password = new string('a', 12); // Length is valid, but standard Identity strength validation must fail.
         await Assert.ThrowsAsync<InvalidOperationException>(() => DevelopmentAccountSeeder.SeedAsync("Development", options, users, context, clock, default));
-        await using var verification = database.CreateContext();
+        await using var verification = Database.CreateContext();
         Assert.False(await verification.Users.AnyAsync(user => user.Email == options.Email));
     }
 
@@ -252,17 +252,17 @@ public sealed class AuthenticationTests(PostgresDatabase database)
     {
         await PrepareRoles();
         var gate = new RegistrationGate();
-        await using var factory = new AuthApiFactory(database, registrationGate: gate);
+        await using var factory = new AuthApiFactory(Database, registrationGate: gate);
         using var first = factory.Browser();
         using var second = factory.Browser();
         var payload = new { email = Email(), password = Password() };
-        var firstToken = await Token(first);
-        var secondToken = await Token(second);
-        var responses = await Task.WhenAll(Post(first, "register", payload, firstToken), Post(second, "register", payload, secondToken));
+        var firstToken = await BrowserRequests.TokenAsync(first);
+        var secondToken = await BrowserRequests.TokenAsync(second);
+        var responses = await Task.WhenAll(BrowserRequests.PostAuthAsync(first, "register", payload, firstToken), BrowserRequests.PostAuthAsync(second, "register", payload, secondToken));
         Assert.Equal(2, gate.Participants);
         Assert.Equal(new[] { 201, 400 }, responses.Select(response => (int)response.StatusCode).Order().ToArray());
         foreach (var response in responses) response.Dispose();
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         Assert.Equal(1, await context.Users.CountAsync(user => user.Email == payload.email));
     }
 
@@ -271,18 +271,18 @@ public sealed class AuthenticationTests(PostgresDatabase database)
     {
         await PrepareRoles();
         var gate = new LoginGate();
-        await using var firstHost = new AuthApiFactory(database, loginGate: gate);
-        await using var secondHost = new AuthApiFactory(database, loginGate: gate);
+        await using var firstHost = new AuthApiFactory(Database, loginGate: gate);
+        await using var secondHost = new AuthApiFactory(Database, loginGate: gate);
         using var first = firstHost.Browser();
         using var second = secondHost.Browser();
         var email = Email();
-        using var registered = await Post(first, "register", new { email, password = Password() }, await Token(first));
+        using var registered = await BrowserRequests.PostAuthAsync(first, "register", new { email, password = Password() }, await BrowserRequests.TokenAsync(first));
         Assert.Equal(HttpStatusCode.Created, registered.StatusCode);
-        var tokenOne = await Token(first);
-        var tokenTwo = await Token(second);
+        var tokenOne = await BrowserRequests.TokenAsync(first);
+        var tokenTwo = await BrowserRequests.TokenAsync(second);
         var responses = await Task.WhenAll(
-            Post(first, "login", new { email, password = Password() }, tokenOne),
-            Post(second, "login", new { email, password = Password() }, tokenTwo));
+            BrowserRequests.PostAuthAsync(first, "login", new { email, password = Password() }, tokenOne),
+            BrowserRequests.PostAuthAsync(second, "login", new { email, password = Password() }, tokenTwo));
         Assert.Equal(2, gate.Participants);
         foreach (var response in responses)
         {
@@ -290,44 +290,27 @@ public sealed class AuthenticationTests(PostgresDatabase database)
             response.Dispose();
         }
 
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         Assert.Equal(2, (await context.Users.SingleAsync(user => user.Email == email)).AccessFailedCount);
     }
 
     private async Task PrepareRoles()
     {
-        await using var context = database.CreateContext();
+        await using var context = Database.CreateContext();
         await DevelopmentSeeder.SeedRolesAsync(context, default);
     }
 
     [Fact]
     public async Task Global_csrf_policy_applies_to_controllers_without_auth_annotations()
     {
-        await using var factory = new AuthApiFactory(database);
+        await using var factory = new AuthApiFactory(Database);
         using var client = factory.Browser();
         using var denied = await client.PostAsync("/_tests/auth/unsafe", null);
         await Problem(denied, 400, "antiforgery_failed");
         using var request = new HttpRequestMessage(HttpMethod.Post, "/_tests/auth/unsafe");
-        request.Headers.Add("X-CSRF-TOKEN", await Token(client));
+        request.Headers.Add("X-CSRF-TOKEN", await BrowserRequests.TokenAsync(client));
         using var allowed = await client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
-    }
-
-    public static async Task<string> Token(HttpClient client)
-    {
-        using var response = await client.GetAsync("/api/auth/antiforgery");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.True(response.Headers.CacheControl?.NoStore);
-        var value = await response.Content.ReadFromJsonAsync<AntiforgeryResponse>();
-        Assert.Equal("X-CSRF-TOKEN", value!.HeaderName);
-        return value.RequestToken;
-    }
-
-    public static async Task<HttpResponseMessage> Post(HttpClient client, string operation, object payload, string? token)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/" + operation) { Content = JsonContent.Create(payload) };
-        if (token is not null) request.Headers.Add("X-CSRF-TOKEN", token);
-        return await client.SendAsync(request);
     }
 
     public static async Task<JsonElement> Problem(HttpResponseMessage response, int status, string code)

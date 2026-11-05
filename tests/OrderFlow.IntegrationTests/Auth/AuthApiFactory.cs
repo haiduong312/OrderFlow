@@ -1,13 +1,14 @@
-using System.Collections.Concurrent;
-using System.Data.Common;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OrderFlow.Application.Modules.Identity;
 using OrderFlow.Application.Persistence;
@@ -19,7 +20,7 @@ namespace OrderFlow.IntegrationTests.Auth;
 
 public sealed class AuthApiFactory(PostgresDatabase database, string environment = "Production", bool allowHttp = false,
     RegistrationGate? registrationGate = null, LoginGate? loginGate = null,
-    DbCommandInterceptor? catalogInterceptor = null) : WebApplicationFactory<Api.Program>
+    DbCommandInterceptor? catalogInterceptor = null, TimeProvider? clock = null) : WebApplicationFactory<Api.Program>
 {
     public CapturingLoggerProvider Logs { get; } = new();
 
@@ -33,8 +34,10 @@ public sealed class AuthApiFactory(PostgresDatabase database, string environment
                 ["Authentication:AllowInsecureHttp"] = allowHttp.ToString()
             }));
         builder.ConfigureLogging(logging => logging.AddProvider(Logs));
-        builder.ConfigureServices(services =>
+        builder.ConfigureTestServices(services =>
         {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton(clock ?? TimeProvider.System);
             services.AddDataProtection().UseEphemeralDataProtectionProvider();
             services.AddControllers().AddApplicationPart(typeof(AuthPolicyProbeController).Assembly);
             services.AddSingleton<RepresentativeResourceStore>();
@@ -54,6 +57,25 @@ public sealed class AuthApiFactory(PostgresDatabase database, string environment
         });
     }
 
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        var host = builder.Build();
+        // Inspect the FINAL provider, including WithWebHostBuilder additions. Checking service
+        // descriptors earlier can miss a hosted service registered after ConfigureTestServices.
+        var unexpected = host.Services.GetServices<IHostedService>().Where(service => service.GetType().FullName is not (
+            "Microsoft.AspNetCore.Hosting.GenericWebHostService" or
+            "Microsoft.AspNetCore.DataProtection.Internal.DataProtectionHostedService")).ToArray();
+        if (unexpected.Length != 0)
+        {
+            host.Dispose();
+            throw new InvalidOperationException("Test host found uncontrolled background services: " +
+                string.Join(", ", unexpected.Select(service => service.GetType().FullName)) +
+                ". Remove them explicitly or drive them manually in the test.");
+        }
+        host.Start();
+        return host;
+    }
+
     public HttpClient Browser(bool https = true) => CreateClient(new WebApplicationFactoryClientOptions
     {
         BaseAddress = new Uri(https ? "https://localhost" : "http://localhost"),
@@ -64,45 +86,18 @@ public sealed class AuthApiFactory(PostgresDatabase database, string environment
 
 public sealed class RegistrationGate : IUserValidator<ApplicationUser>
 {
-    private readonly ConcurrentDictionary<Guid, byte> participants = new();
-    private readonly TaskCompletionSource both = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    public int Participants => participants.Count;
+    private readonly RaceRendezvous rendezvous = new();
+    public int Participants => rendezvous.Participants;
 
     public async Task<IdentityResult> ValidateAsync(UserManager<ApplicationUser> manager, ApplicationUser user)
     {
-        participants.TryAdd(user.Id, 0);
-        if (participants.Count >= 2)
-        {
-            both.TrySetResult();
-        }
-
-        // Default Identity validators have already queried uniqueness before this gate.
-        await both.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        // Default validators have queried uniqueness; neither registration has written a user.
+        await rendezvous.ArriveAsync(user.Id, CancellationToken.None);
         return IdentityResult.Success;
     }
 }
 
-public sealed class LoginGate : DbCommandInterceptor
+public sealed class LoginGate : CommandRaceGate
 {
-    private readonly ConcurrentDictionary<Guid, byte> participants = new();
-    private readonly TaskCompletionSource both = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    public int Participants => participants.Count;
-
-    public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
-        CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
-    {
-        if (command.CommandText.Contains("FOR UPDATE", StringComparison.Ordinal))
-        {
-            participants.TryAdd(eventData.Context!.ContextId.InstanceId, 0);
-            if (participants.Count >= 2)
-            {
-                both.TrySetResult();
-            }
-
-            // Before SQL executes, so neither participant holds the contested user row yet.
-            await both.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
-        }
-
-        return result;
-    }
+    public LoginGate() : base(command => command.Contains("FOR UPDATE", StringComparison.Ordinal)) => Enabled = true;
 }

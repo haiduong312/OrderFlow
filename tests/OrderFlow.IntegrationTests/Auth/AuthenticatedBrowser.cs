@@ -14,8 +14,8 @@ public static class AuthenticatedBrowser
     {
         // Test setup persists users/roles through real Identity stores. HTTP authentication
         // still uses the production login endpoint and cookie handler, never a test auth scheme.
-        var email = AuthenticationTests.Email();
-        var password = AuthenticationTests.Password();
+        var email = "browser-" + Guid.NewGuid().ToString("N") + "@example.invalid";
+        var password = "Aa1!" + Guid.NewGuid().ToString("N");
         var id = Guid.NewGuid();
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -31,7 +31,7 @@ public static class AuthenticatedBrowser
         }
 
         var client = factory.Browser();
-        using var response = await AuthenticationTests.Post(client, "login", new { email, password }, await AuthenticationTests.Token(client));
+        using var response = await BrowserRequests.PostAuthAsync(client, "login", new { email, password }, await BrowserRequests.TokenAsync(client));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (client, id);
     }
