@@ -5,3 +5,5 @@ This project references Application, not either host. Milestone 02a adds meaning
 Milestone 03 adds six snapshot-completion guard/buffer-isolation tests (43 unit cases total). SQL uniqueness, FK, immutable-trigger, shared-transaction and provider-conversion behavior are verified separately against actual PostgreSQL in IntegrationTests.
 
 Milestone 04 adds development-account configuration guards; milestone 07 adds SKU/name/price/category/version/archive domain tests. Current unit suite: 57 cases. Catalog SQL/constraints, concurrency, HTTP/permissions and OpenAPI are covered against PostgreSQL separately.
+
+Milestone 08 adds Inventory delta/audit/overflow/ordering/UTC JSON tests: 65 unit cases total. PostgreSQL integration tests cover initialization/backfill, invariants, reserved floor, append-only protection, transactions, command replay, stale tracking and deterministic cross-host/multi-row races.

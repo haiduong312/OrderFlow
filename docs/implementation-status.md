@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-03 (Asia/Ho_Chi_Minh). Current milestone: **07 — Products/Categories Catalog**. Domain rules, shared PostgreSQL mappings/AddCatalog migration, Admin create/update/archive and public read/search/pagination DTO endpoints are implemented/tested. Inventory/Orders/payment/client/broker behavior remains future work. A03 is complete for the Catalog slice but still partial for Order snapshots/totals/client math; A02 remains partial beyond current authorization evidence. Milestone 05 React remains pending.
+Updated: 2026-11-04 (Asia/Ho_Chi_Minh). Current milestone: **08 — Inventory balances and append-only stock movements**. Atomic zero initialization/backfill, audited Admin receipts/adjustments, operation replay, PostgreSQL row-lock coordination and actual advisory Available are implemented/tested. Full order reservations move to 09 per the current request, including their necessary Order identity prerequisites. React 05, checkout/payment/worker dispatch and deployment work remain pending; acceptance beyond the evidence below stays partial.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -36,10 +36,10 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 05 | React/TypeScript skeleton; pinned client tooling, TanStack Query/Zustand, dev same-origin proxy | 02, 02a | A01 | Pending |
 | 06 | Authorization/ownership contracts/policies/handlers, denial mapping and focused CSRF/auth/resource tests | 04 | A02 | Complete: representative-resource foundations; real Order integration remains 13/19 |
 | 07 | Products/Categories domain/schema, Admin create/update/archive, public read/search/paging, exact prices and concurrency | 03, 06 | A03 | Complete: Catalog slice; Order snapshots/totals remain 11/12 |
-| 08 | Inventory balances/history schema, guarded adjustments and ledger constraints; reservation domain rules | 07 | A04, A07, A16 | Pending |
-| 09 | Admin stock HTTP endpoints, operation replay, stock races and constraint tests | 08 | A04 | Pending |
+| 08 | Inventory balances/append-only movements, zero initialization/backfill, Admin receipts/adjustments/replay and stock races | 07 | A04, A16 | Complete: stock foundation; reservations deferred to 09 |
+| 09 | Full order reservation model/behavior and necessary Order identity/FK prerequisites; SQL/domain/race tests | 08 | A04, A07, A08, A16 | Pending |
 | 10 | Operation-specific normalization, replay/conflict protocol using the shared idempotency store | 03, 06 | A06 | Pending |
-| 11 | Order/line/reservation schema/domain, deadline rules, transactional order events and state tests | 07, 08 | A03, A07, A08 | Pending |
+| 11 | Complete Order/line snapshots/lifecycle and transactional events on the 09 reservation/Order foundations | 07, 09 | A03, A07, A08 | Pending |
 | 12 | Atomic CreateOrder/reserve + original response; stock/idempotency concurrency and rollback | 09, 10, 11 | A05–A08, A16, A23 | Pending |
 | 13 | Own order reads/list, pending cancellation/release and authorization regressions | 12 | A02, A07–A09 | Pending |
 | 14 | Outbox dispatch/inbox and worker lease/retry foundation; expiry worker + deterministic races | 13 | A07–A09, A16–A19 | Pending |
@@ -59,7 +59,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 28 | Operational backlog/failure view, health/lag metrics, audited same-identity operator replay and recovery runbook | 25, 26, 27 | A19, A22 | Pending |
 | 29 | Full acceptance walkthrough; portfolio architecture/demo/interview guide and verified limitations | 28 | A01–A24 | Pending |
 
-Feature order is intentional: HTTP idempotency/stock correctness precede payment; outbox/worker durability precede external intentions; auth/CSRF precede protected client flows; fault tests and operability precede the final demo. Reservation/order foreign keys are introduced together in 11; command-to-order links can be completed in 12 after both schemas exist. Reliability storage is now implemented in 03, ahead of its operation-specific use in 10/11/12 and dispatch in 14. Required CSRF protection ships with auth endpoints in 04; 06 extends authorization/regression coverage. Each feature milestone writes its relevant tests then; 26 does not defer concurrency proof. The latest instruction swaps the prior 04 React/05 Identity deliverables to 05/04; ADR-009 records that scope correction. The milestone-04 request additionally assigns shared Data Protection key implementation to 26; ADR-010 extends that milestone with deployment hardening while retaining its fault suite. Milestone 25 remains local composition. The next explicit request implements authorization milestone 06 before React 05; its dependency is 04, so no prerequisite or roadmap ID is skipped implicitly. ADR-011 records this delivery order.
+Feature order is intentional: HTTP idempotency/stock correctness precede payment; outbox/worker durability precede external intentions; auth/CSRF precede protected client flows; fault tests and operability precede the final demo. Per the milestone-08 request, full reservations and their required Order identity/FK prerequisites move to 09; 11 completes Order lines/lifecycle/events; command-to-order links can be completed in 12 after both schemas exist. Reliability storage is now implemented in 03, ahead of its operation-specific use in 10/11/12 and dispatch in 14. Required CSRF protection ships with auth endpoints in 04; 06 extends authorization/regression coverage. Each feature milestone writes its relevant tests then; 26 does not defer concurrency proof. The latest instruction swaps the prior 04 React/05 Identity deliverables to 05/04; ADR-009 records that scope correction. The milestone-04 request additionally assigns shared Data Protection key implementation to 26; ADR-010 extends that milestone with deployment hardening while retaining its fault suite. Milestone 25 remains local composition. The next explicit request implements authorization milestone 06 before React 05; its dependency is 04, so no prerequisite or roadmap ID is skipped implicitly. ADR-011 records this delivery order. ADR-013 moves Admin stock APIs/replay/race work from 09 into 08 and full reservations/required Order prerequisites into 09; it retains checkout, expiry-worker and payment integration in later milestones.
 
 Requested supplemental milestone **02a** depends on 02 and is **Complete: shared HTTP/application foundations**. It establishes the common error/JSON/time/pagination conventions used by 03 and later HTTP features. IDs 01–29 and their business scopes are retained; 03 remains PostgreSQL work, not implicitly completed by this addition. ADR-008 records this roadmap adjustment and the clarified money input/output grammar.
 
@@ -509,3 +509,71 @@ Remaining: Inventory balances/default-zero initialization/advisory counts in 08/
 Before proceeding, explain the controller → domain/transaction → DTO flow, category/product lock order, filtered paging/tie-breakers, archival visibility and which inventory/order guarantees are still absent.
 
 Suggested commit title: `feat: add product and category catalog` (none was supplied; this is the proposed title). No commit was created.
+
+## Milestone 08 — Inventory balances and append-only StockMovements
+
+### Inspection, scope and decisions
+
+Read AGENTS.md, contract, architecture/status and ADR-003/004/012; inspected clean Git (`main...origin/main`), existing Catalog create/read flows, Identity/resource policies/ICurrentUser, scoped EF context, migrations/mappings, package/SDK/tool pins and PostgreSQL tests before editing. Reused the three-project/module architecture, real cookie/CSRF tests and existing error/pagination/time contracts. No package/version change, generic repository, cache/upload, Order entity or worker job was introduced. No commit, push, deployment, history rewrite, user-data reset or agent delegation occurred.
+
+Reported the scope adjustment before implementation: the request brings Admin stock receipts/adjustments/replay/race evidence into 08 (formerly 09), and assigns full order reservation behavior to 09 (formerly some schema in 11). [ADR-013](adr/0013-inventory-ledger-and-stock-commands.md) updates the roadmap: 09 includes its required Order identity/FK prerequisites; 11 completes lines/lifecycle/events, and checkout/worker/payment integration remains later. No premature reservation enum/interface or fake reservation endpoint was added.
+
+### Completed acceptance
+
+| Requirement | Result / evidence |
+| --- | --- |
+| Inventory for every Product | Complete: Product insert trigger creates zero balance/opening movement in the same transaction; migration backfills existing active/archived products once, without nonzero stock or fake human account |
+| Durable stock invariant | Complete: int OnHand/Reserved, bigint Revision; DB checks 0 <= Reserved <= OnHand and revision >= 0; derived Available only; direct SQL invalid states rejected |
+| Admin receipt/adjustment use cases | Complete: positive receipt/nonzero signed delta, bounded required reason, actor from authenticated ICurrentUser and actual Identity user; Admin + CSRF, no actor/stock/derived input bypass |
+| Atomic history and balance | Complete: one short PostgreSQL transaction, row locks, tracked EF update + inserted snapshot movement; rollback and injected write-failure tests prove no partial stock/history |
+| Append-only audit | Complete: immutable kind/actor/reason/deltas/before-after facts/reference/revision/UTC time; DB UPDATE/DELETE/TRUNCATE protection, EF saved-property protection and restrictive audit FKs |
+| Process-safe concurrency | Complete: two API hosts contend on one stock row safely, concurrent receipts retain increments, duplicate commands cannot apply twice, cross-product collision rolls back loser |
+| Multi-row ordering | Complete: bounded/deduplicated canonical UUID ordering, sequential FOR UPDATE locks; opposite-order inputs in separate units prove the same lock order and correct committed stock |
+| Stale tracked state | Complete: no ExecuteUpdate; fresh locking query explicitly refreshes current/original snapshots and resets unchanged tracked state; pending unsaved edits rejected, regression test passed |
+| Durable operation identity | Complete: unique namespace/operation UUID; compare normalized actor/product/kind/delta/reason; same command returns original movement, changed command 409, failed transaction consumes no key |
+| Read DTOs/history | Complete: Product Available from actual stock; Admin OnHand/Reserved/Revision and paged history (max100, unique revision order), numeric counts, string enum names and property-specific UTC Z/microsecond timestamp |
+| Deferred criteria | Full reservation lifecycle/history deltas are 09; Order checkout/payment/worker/outbox integration, operational privileges/shared keys and frontend remain later. A04 stock commands proven; A07/A16–A19 overall remain partial beyond current evidence |
+
+### Main flow / giải thích bằng tiếng Việt
+
+Tạo Product ghi bảng Products; trigger PostgreSQL tạo balance OnHand=Reserved=0 và movement khởi tạo System ngay trong transaction đó. Migration áp dụng cùng quy tắc cho Product cũ, không tự tạo lượng hàng thực tế. Public Product trả Available = OnHand - Reserved từ dữ liệu thật, client không được ghi các giá trị này.
+
+Admin gửi receipt/adjustment với operationId, quantity/delta và lý do. API kiểm tra cookie/role/CSRF; InventoryService lấy actor từ ICurrentUser, kiểm tra replay, mở transaction và khóa balance theo thứ tự ProductId. Balance được đọc mới dưới khóa rồi domain kiểm tra không giảm dưới Reserved/không overflow. Service ghi cả balance và movement rồi commit. Movement không thể sửa/xóa bằng DML thông thường; muốn sửa tồn kho phải thêm adjustment có lý do. Gửi lại cùng operation trả movement gốc, không cộng/trừ thêm.
+
+### Important files and migration
+
+- Application [InventoryBalance](../src/OrderFlow.Application/Modules/Inventory/InventoryBalance.cs), [StockMovement](../src/OrderFlow.Application/Modules/Inventory/StockMovement.cs), [InventoryService](../src/OrderFlow.Application/Modules/Inventory/InventoryService.cs), [InventoryLocking](../src/OrderFlow.Application/Modules/Inventory/InventoryLocking.cs) and explicit request/response/time JSON contracts.
+- Persistence [InventoryConfiguration](../src/OrderFlow.Application/Persistence/InventoryConfiguration.cs), shared context, **[20261104083112_AddInventory](../src/OrderFlow.Application/Persistence/Migrations/20261104083112_AddInventory.cs)** with generated designer/snapshot and reviewed trigger/backfill SQL. Up is additive; Down would delete inventory/history and was not run.
+- API [AdminInventoryController](../src/OrderFlow.Api/Inventory/AdminInventoryController.cs), InventoryRegistration, Program and explicit stock-limit error; Catalog DTO/projection/mutation response reads actual Available and keeps stock writes in Inventory.
+- [HTTP tests](../tests/OrderFlow.IntegrationTests/Inventory/InventoryHttpTests.cs), [concurrency tests](../tests/OrderFlow.IntegrationTests/Inventory/InventoryConcurrencyTests.cs), [SQL/fault/backfill/tracking tests](../tests/OrderFlow.IntegrationTests/Inventory/InventoryPersistenceTests.cs), [domain tests](../tests/OrderFlow.UnitTests/InventoryDomainTests.cs), migration count/error mapping/OpenAPI regressions.
+- [Inventory runbook](inventory.md), [ADR-013](adr/0013-inventory-ledger-and-stock-commands.md), README/spec/architecture/persistence/Catalog/status/module docs.
+
+### Exact checks and results
+
+Tool environment: DOTNET_CLI_HOME=/tmp/orderflow-m02/dotnet-home, DOTNET_CLI_TELEMETRY_OPTOUT=1, NUGET_PACKAGES=/tmp/orderflow-m02/packages, NUGET_HTTP_CACHE_PATH=/tmp/orderflow-m02/http-cache. Generated artifacts/TRX/scripts/SQL/logs are under /tmp/orderflow-inventory. Credentials come privately from the existing mode-0600 verification file through environment variables, never printed/tracked. SDK remains 10.0.114, ASP.NET/EF/Identity/tool 10.0.14 and Npgsql 10.0.3. Official PostgreSQL locking/trigger/UUID and EF tracking APIs were consulted.
+
+1. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-inventory/artifacts` — exit 0/all five projects, unchanged package/SDK/lockfiles.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-inventory/artifacts` — final exit 0, **0 warnings/errors**. An intermediate build flagged EF1002 on test-only interpolated DDL; those calls now use explicit Npgsql commands with generated UUID identifiers, without analyzer suppression or unsafe production interpolation.
+3. `dotnet ef migrations add AddInventory --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output-dir Persistence/Migrations` — exit 0. Reviewed/generated schema, then added atomic Product initialization/backfill and UPDATE/DELETE/TRUNCATE guards. EF commands set ArtifactsPath=/tmp/orderflow-inventory/artifacts to match the build.
+4. `dotnet ef database update --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` — exit 0, additive Inventory migration on retained verification DB; repeat exit 0/no changes. `dotnet ef migrations has-pending-model-changes` with the same flags — exit 0/no drift. `dotnet ef migrations script --idempotent --output /tmp/orderflow-inventory/migration.sql` with the same flags — exit 0. Tests independently migrate a fresh DB and upgrade an owned DB containing active/archived legacy products; each gets exactly one zero opening fact.
+5. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-inventory/artifacts --logger 'trx;LogFilePrefix=inventory' --results-directory /tmp/orderflow-inventory/test-results` with private ORDERFLOW_TEST_POSTGRES — final exit 0: **65 unit + 163 integration/HTTP = 228 passed, 0 failed/skipped**. Final TRX inventory_net10.0_20261104155955.trx and inventory_net10.0_20261104160017.trx. There are 96 PostgreSQL cases and 132 external-service-free cases. Stock tests use real PostgreSQL/Identity cookies/CSRF, no EF InMemory or test auth scheme. Race barriers count distinct participating DbContexts; no sleeps. Test DB cleanup drops only generated databases owned by the fixtures.
+6. Real OpenAPI inspection found inherited error response attributes suppressed default 200 schemas on Inventory and existing Catalog reads/updates, and the custom timestamp needed an explicit string type. Added action-specific success metadata and timestamp schema plus regressions, preserving ProblemDetails content types and business behavior. `/tmp/orderflow-inventory/read-openapi.py` independently starts Kestrel loopback in Development, verifies bounded public products/categories 200, generated typed OpenAPI, and SIGTERM exit 0. No catalog/account data is created by this smoke check.
+7. PostgreSQL Compose verification starts healthy with the existing temporary Snap daemon workaround; the committed Compose/secret setup is unchanged. Final read-only verification counts were users=0, roles=2, products=0, balances=0, movements=0, migrations=3: only additive schema changes, no sample stock/account seed. Cleanup down exited 0 without --volumes, and volume inspection confirmed orderflow-m03-check_postgres_data is retained. Final git diff --check and repository checks passed: 149 deliverable files, 211 valid local Markdown links, valid JSON/XML/balanced fences, retained roadmap IDs and unchanged package/SDK/lockfile graph; no generated output or private verification credential in deliverables.
+
+### Manual verification and trade-offs
+
+Apply migrations explicitly after README restore/build. Follow [Inventory runbook](inventory.md): Development Admin/cookie jar + fresh CSRF; create Product and observe zero/Initialization; receive 10 with a retained operation UUID; replay it and observe stock still 10; new adjustment -3 leaves 7; excessive removal gives 409 with no new movement. Read history/current inventory separately; a replay is an old snapshot. Missing CSRF, wrong role, spoofed actor/Available/Reserved or invalid quantities must fail. Never set Reserved via a production shortcut; only tests model an existing reservation until 09.
+
+Trade-offs: row locks serialize one product; multi-row callers must submit their complete ID set in a single ordered locking call. Available is advisory and independent of Product.Version. Revision order is deterministic, while count/page can drift under concurrent inserts. Initialization triggers add reviewed database behavior but cover every insertion path; their timestamp is logical Product.CreatedAt, not a physical receipt. System opening facts have no fake human actor. Audit rows/operation identities are retained; corrections are new movements. Runtime least privilege/shared Data Protection/browser acceptance and large-data benchmarks are not implemented here. Privileged schema owners can alter/drop protections; normal DML cannot edit the ledger.
+
+Remaining: full reservation model and required Order identity/FK prerequisites in 09, line snapshots/lifecycle/events in 11, authoritative checkout/idempotency in 10/12, expiry worker/payment transitions later. Reservation-related history/checks must be extended in 09 without mutating existing facts. No claim of complete reservation/Order reconciliation or external exactly-once delivery is made.
+
+### Interview preparation
+
+1. **Vì sao transaction chưa đủ nếu cùng đọc tồn kho cũ?** Hiểu FOR UPDATE và thứ tự khóa ProductId bảo vệ read/check/write giữa nhiều process; constraints là lớp bảo vệ cuối.
+2. **Vì sao movement phải ghi cùng balance và không được sửa?** Hiểu rollback, before/after/delta/actor/reason, correction bằng movement mới và operation UUID tránh áp dụng lặp khi mất response.
+3. **Vì sao phải refresh entity đã track trước đó?** EF có thể trả instance cũ; cần snapshot mới dưới khóa, không trộn ExecuteUpdate với dữ liệu tracked rồi ghi đè tồn kho đã đổi.
+
+Before proceeding, explain zero initialization vs physical receipt, server-derived actor/Available, reserved-floor/overflow behavior, ordered locking/tracker reconciliation and the scope of the 09 reservation work.
+
+Suggested commit title: `feat: add inventory balances and append-only stock movements` (none was supplied; this is the proposed title). No commit was created.

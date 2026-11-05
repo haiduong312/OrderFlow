@@ -26,6 +26,7 @@ public class HttpFoundationTests
     [InlineData(ApplicationError.InsufficientStock, 409, "insufficient_stock")]
     [InlineData(ApplicationError.VersionConflict, 409, "version_conflict")]
     [InlineData(ApplicationError.SkuConflict, 409, "sku_conflict")]
+    [InlineData(ApplicationError.StockLimitExceeded, 409, "stock_limit_exceeded")]
     [InlineData(ApplicationError.OrderExpired, 409, "order_expired")]
     public async Task Expected_failures_have_explicit_status_codes(ApplicationError error, int status, string code)
     {

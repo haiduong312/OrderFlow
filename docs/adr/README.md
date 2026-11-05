@@ -16,5 +16,6 @@ Records below are accepted design decisions; each record supplies its decision d
 | [ADR-010](0010-identity-cookie-authentication.md) | Identity cookies, global JSON CSRF validation, roles/rate limits and explicit local account bootstrap |
 | [ADR-011](0011-resource-authorization.md) | Resource ownership/Admin policies, application-facing caller identity and explicit denial mapping |
 | [ADR-012](0012-catalog-products-categories.md) | Product/Category schema, archival visibility, version/lock coordination and literal substring search |
+| [ADR-013](0013-inventory-ledger-and-stock-commands.md) | Inventory balances/initialization, append-only audit, ordered row locks and stock operation replay |
 
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

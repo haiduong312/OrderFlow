@@ -7,7 +7,7 @@ namespace OrderFlow.Application.Modules.Catalog;
 public sealed record CategoryResponse(Guid Id, string Name, bool IsActive, int Version);
 public sealed record CategorySummary(Guid Id, string Name, bool IsActive);
 public sealed record ProductResponse(Guid Id, string Sku, string Name, string Description, UsdMoney Price,
-    CategorySummary Category, bool IsActive, int Version)
+    CategorySummary Category, bool IsActive, int Version, int Available)
 {
     public string Currency => UsdMoney.Currency;
 }

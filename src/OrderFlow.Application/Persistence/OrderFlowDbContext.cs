@@ -7,6 +7,7 @@ using OrderFlow.Application.Common.Time;
 using OrderFlow.Application.Messaging;
 using OrderFlow.Application.Modules.Identity;
 using OrderFlow.Application.Modules.Catalog;
+using OrderFlow.Application.Modules.Inventory;
 
 namespace OrderFlow.Application.Persistence;
 
@@ -18,6 +19,8 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<InventoryBalance> InventoryBalances => Set<InventoryBalance>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder builder)
     {
@@ -46,6 +49,8 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
         builder.ApplyConfiguration(new ProcessedMessageConfiguration());
         builder.ApplyConfiguration(new ProductConfiguration());
         builder.ApplyConfiguration(new CategoryConfiguration());
+        builder.ApplyConfiguration(new InventoryBalanceConfiguration());
+        builder.ApplyConfiguration(new StockMovementConfiguration());
     }
 }
 

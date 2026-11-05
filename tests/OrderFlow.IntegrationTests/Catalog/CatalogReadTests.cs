@@ -138,6 +138,9 @@ public sealed class CatalogReadTests(PostgresDatabase database)
         using var client = factory.Browser();
         var document = await client.GetFromJsonAsync<JsonElement>("/openapi/v1.json");
         var paths = document.GetProperty("paths");
+        foreach (var route in new[] { "/api/products", "/api/products/{id}", "/api/categories", "/api/admin/products/{id}", "/api/admin/categories" })
+            Assert.True(paths.GetProperty(route).GetProperty("get").GetProperty("responses").GetProperty("200")
+                .GetProperty("content").TryGetProperty("application/json", out _));
         var create = paths.GetProperty("/api/admin/products").GetProperty("post");
         Assert.True(create.GetProperty("responses").TryGetProperty("201", out var created));
         Assert.True(created.GetProperty("content").TryGetProperty("application/json", out _));

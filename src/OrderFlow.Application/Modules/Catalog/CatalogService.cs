@@ -12,7 +12,8 @@ public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clo
 {
     private static readonly Expression<Func<Product, ProductResponse>> ProductProjection = product => new(
         product.Id, product.Sku, product.Name, product.Description, product.Price,
-        new CategorySummary(product.Category.Id, product.Category.Name, product.Category.IsActive), product.IsActive, product.Version);
+        new CategorySummary(product.Category.Id, product.Category.Name, product.Category.IsActive), product.IsActive, product.Version,
+        product.Inventory.OnHand - product.Inventory.Reserved);
     private static readonly Expression<Func<Category, CategoryResponse>> CategoryProjection = category =>
         new(category.Id, category.Name, category.IsActive, category.Version);
 
@@ -105,8 +106,9 @@ public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clo
         var category = await ActiveCategoryAsync(product.CategoryId, cancellationToken);
         database.Products.Add(product);
         await SaveAsync(cancellationToken);
+        var response = await ResponseAsync(product, category, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return Response(product, category);
+        return response;
     }
 
     public async Task<ProductResponse> UpdateProductAsync(Guid id, UpdateProductRequest request, CancellationToken cancellationToken)
@@ -118,8 +120,9 @@ public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clo
             request.IsActive ?? throw CatalogRules.Invalid("isActive", "Active flag is required."), CatalogRules.Version(request.ExpectedVersion));
         var category = await ActiveCategoryAsync(product.CategoryId, cancellationToken);
         await SaveAsync(cancellationToken);
+        var response = await ResponseAsync(product, category, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return Response(product, category);
+        return response;
     }
 
     public async Task<ProductResponse> ArchiveProductAsync(Guid id, ArchiveRequest request, CancellationToken cancellationToken)
@@ -129,7 +132,7 @@ public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clo
         product.Archive(CatalogRules.Version(request.ExpectedVersion));
         database.Entry(product).Property(row => row.Version).IsModified = true;
         await SaveAsync(cancellationToken);
-        return Response(product, product.Category);
+        return await ResponseAsync(product, product.Category, cancellationToken);
     }
 
     private async Task<Category> ActiveCategoryAsync(Guid id, CancellationToken cancellationToken)
@@ -170,6 +173,11 @@ public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clo
     }
 
     private static CategoryResponse Response(Category category) => new(category.Id, category.Name, category.IsActive, category.Version);
-    private static ProductResponse Response(Product product, Category category) => new(product.Id, product.Sku, product.Name,
-        product.Description, product.Price, new(category.Id, category.Name, category.IsActive), product.IsActive, product.Version);
+    private async Task<ProductResponse> ResponseAsync(Product product, Category category, CancellationToken cancellationToken)
+    {
+        var available = await database.InventoryBalances.AsNoTracking().Where(balance => balance.ProductId == product.Id)
+            .Select(balance => balance.OnHand - balance.Reserved).SingleAsync(cancellationToken);
+        return new(product.Id, product.Sku, product.Name, product.Description, product.Price,
+            new(category.Id, category.Name, category.IsActive), product.IsActive, product.Version, available);
+    }
 }

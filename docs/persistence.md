@@ -1,6 +1,6 @@
-# PostgreSQL persistence — milestones 03/07
+# PostgreSQL persistence — milestones 03/07/08
 
-One scoped OrderFlowDbContext contains Identity and the three durable reliability stores. Milestone 07 adds Catalog Products/Categories with explicit mappings/migration. No order/inventory/payment entities, broker, dispatcher, lease-claim worker or automatic migration/seed exists. Milestone 04 uses the existing Identity storage for [browser authentication and opt-in development accounts](authentication.md); no additional migration is needed. See [ADR-009](adr/0009-postgresql-reliability-foundations.md), [architecture](architecture.md), and [implementation status](implementation-status.md).
+One scoped OrderFlowDbContext contains Identity and the three durable reliability stores. Milestone 07 adds Catalog Products/Categories with explicit mappings/migration. Milestone 08 adds Inventory balances/StockMovements with initialization and append-only triggers. No Order/reservation/payment entity, broker, dispatcher, lease-claim worker or automatic startup migration/seed exists. Milestone 04 uses the existing Identity storage for [browser authentication and opt-in development accounts](authentication.md); no additional migration is needed. See [ADR-009](adr/0009-postgresql-reliability-foundations.md), [architecture](architecture.md), and [implementation status](implementation-status.md).
 
 ## Local PostgreSQL only
 
@@ -138,3 +138,7 @@ If you intentionally want to erase disposable dev data, first identify the exact
 ## Catalog migration (07)
 
 After building, run the same dedicated `dotnet ef database update` step above; it now also applies 20261103093358_AddCatalog. Existing Identity/reliability data is retained, and repeated update is a no-op. Catalog creates Categories/Products, required restrictive Category FK, unique normalized SKU, numeric(18,2) positive-price/finite-time/name/version checks and the documented B-tree ordering/filter indexes. No Inventory column/table or default catalog seed is added. See [Catalog](catalog.md) for actual query/index behavior and HTTP verification. Direct raw SQL numeric input can be coerced by numeric(18,2); API/domain reject extra scale before writes. Down removes Catalog data, so never run a rollback/reset against data you need.
+
+## Inventory migration (08)
+
+Apply 20261104083112_AddInventory through the same dedicated EF command after building. Up creates inventory.Balances/StockMovements, balance/snapshot/kind/actor constraints, restrictive FKs, operation/revision unique indexes, Product initialization and append-only/truncate protection triggers. It backfills every existing Product at zero with an explicit System opening fact; new products use the same trigger in their creation transaction. No human account, physical receipt, Order reservation or fake nonzero stock is seeded. See [Inventory](inventory.md) for UTC logical initialization time, audit/replay/locking and verification. Down removes inventory/audit data and was not run; never roll back/reset data you intend to retain. Runtime privilege restrictions remain deployment work.

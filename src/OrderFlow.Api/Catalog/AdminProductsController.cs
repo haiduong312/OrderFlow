@@ -15,11 +15,11 @@ namespace OrderFlow.Api.Catalog;
 [ProducesResponseType<ApiProblemDetails>(409, "application/problem+json")]
 public sealed class AdminProductsController(CatalogService catalog) : ControllerBase
 {
-    [HttpGet]
+    [HttpGet, ProducesResponseType<CatalogPage<ProductResponse>>(200)]
     public Task<CatalogPage<ProductResponse>> List([FromQuery] ProductQuery query, CancellationToken cancellationToken) =>
         catalog.ProductsAsync(query, admin: true, cancellationToken);
 
-    [HttpGet("{id:guid}")]
+    [HttpGet("{id:guid}"), ProducesResponseType<ProductResponse>(200)]
     public Task<ProductResponse> Get(Guid id, CancellationToken cancellationToken) => catalog.ProductAsync(id, admin: true, cancellationToken);
 
     [HttpPost, ProducesResponseType<ProductResponse>(201)]
@@ -29,9 +29,9 @@ public sealed class AdminProductsController(CatalogService catalog) : Controller
         return CreatedAtAction(nameof(Get), new { id = product.Id }, product);
     }
 
-    [HttpPut("{id:guid}")]
+    [HttpPut("{id:guid}"), ProducesResponseType<ProductResponse>(200)]
     public Task<ProductResponse> Update(Guid id, UpdateProductRequest request, CancellationToken cancellationToken) => catalog.UpdateProductAsync(id, request, cancellationToken);
 
-    [HttpPost("{id:guid}/archive")]
+    [HttpPost("{id:guid}/archive"), ProducesResponseType<ProductResponse>(200)]
     public Task<ProductResponse> Archive(Guid id, ArchiveRequest request, CancellationToken cancellationToken) => catalog.ArchiveProductAsync(id, request, cancellationToken);
 }

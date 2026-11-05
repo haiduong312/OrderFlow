@@ -12,5 +12,6 @@ public enum ApplicationError
     VersionConflict,
     OrderExpired,
     Unauthenticated,
-    SkuConflict
+    SkuConflict,
+    StockLimitExceeded
 }

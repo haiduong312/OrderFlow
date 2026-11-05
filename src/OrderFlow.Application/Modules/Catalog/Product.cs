@@ -1,5 +1,6 @@
 using OrderFlow.Application.Common.Money;
 using OrderFlow.Application.Common.Time;
+using OrderFlow.Application.Modules.Inventory;
 
 namespace OrderFlow.Application.Modules.Catalog;
 
@@ -16,6 +17,7 @@ public sealed class Product
     public bool IsActive { get; private set; }
     public int Version { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
+    public InventoryBalance Inventory { get; private set; } = null!;
 
     public static Product Create(string sku, string name, string? description, UsdMoney? price,
         Guid categoryId, DateTimeOffset now) => new()

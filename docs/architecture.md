@@ -1,6 +1,6 @@
 # OrderFlow architecture
 
-Status: accepted design. Milestones 02/02a/03/04/06/07 implement host/HTTP/persistence, Identity/resource authorization and Catalog; order/inventory/payment/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
+Status: accepted design. Milestones 02/02a/03/04/06/07/08 implement host/HTTP/persistence, Identity/resource authorization, Catalog and Inventory balances/stock commands; full order reservation/payment/client behavior below remains planned. Behavioral contract: [project specification](project-spec.md). Delivery order and evidence: [implementation status](implementation-status.md). Rationale: [ADRs](adr/README.md).
 
 ## 1. Deployment and code organization
 
@@ -47,7 +47,9 @@ Milestone 04 adds API/Auth session orchestration, role policies, secure cookie s
 
 Milestone 06 adds ICurrentUser/IOwnedResource contracts in Application/Common/Authorization and ASP.NET Core policies/handlers in API/Auth/Authorization. Scoped ResourceAccess maps explicit permission failures to the existing HTTP contract. Owner queries and domain transition rules still belong to later application features; [ADR-011](adr/0011-resource-authorization.md) and the [authorization guide](authorization.md) define this boundary.
 
-Milestone 07 adds Catalog entities/use cases and explicit EF mappings in the shared context, plus public/admin API controllers and feature-specific OpenAPI schemas. [ADR-012](adr/0012-catalog-products-categories.md) documents the category lock level, archive visibility and baseline substring-search scan behavior. No Inventory model is generated prematurely.
+Milestone 07 adds Catalog entities/use cases and explicit EF mappings in the shared context, plus public/admin API controllers and feature-specific OpenAPI schemas. [ADR-012](adr/0012-catalog-products-categories.md) documents the category lock level, archive visibility and baseline substring-search scan behavior. Inventory is introduced by milestone 08, not by the Catalog milestone.
+
+Milestone 08 adds inventory.Balances/StockMovements, product-trigger initialization/backfill and PostgreSQL append-only guards. InventoryService owns audited stock changes under ordered balance row locks and shares the scoped context/transaction. It deliberately refreshes unchanged tracked balances; no ExecuteUpdate mixing. [ADR-013](adr/0013-inventory-ledger-and-stock-commands.md) and [Inventory guide](inventory.md) describe operation replay, actor identity and scope changes.
 
 ## 2. Platform and version policy
 
@@ -65,7 +67,7 @@ Use one `OrderFlowDbContext` derived from Identity's EF context, with all mappin
 | --- | --- | --- |
 | Identity / `identity` | Identity users, roles, claims, login/security data | Identity APIs own password/role/session rules; Customer is default role |
 | Catalog / `catalog` | Categories/Products, normalized SKU, positive price, active, versions | Catalog alone changes product data; checkout obtains an authoritative locked snapshot |
-| Inventory / `inventory` | StockBalances, Reservations, StockHistory | Inventory alone changes counters/reservations; ordering calls it inside the shared transaction |
+| Inventory / `inventory` | Balances, append-only StockMovements; future Reservations | Inventory alone changes counters/reservations; ordering calls it inside the shared transaction |
 | Ordering / `ordering` | Orders, OrderLines, OrderHistory (future) | Owns lifecycle, owner ID, immutable totals/line snapshots, expiry; uses the shared idempotency store |
 | Payments / `payments` | Attempts, Captures, Refunds, ProviderEvents (future) | Owns provider references, observations, compensation intentions, reconciliation; uses the shared idempotency store |
 | Payments simulator / `simulator` | ProviderAttempts, ProviderCaptures, ProviderRefunds, callback deliveries | Same database for local durability, fresh independent unit of work; merchant rules cannot directly mark provider success |
@@ -78,11 +80,11 @@ Schemas describe ownership, not independent databases. Cross-schema FKs are allo
 ## 4. Persistence constraints and indexes
 
 - Required fields are NOT NULL. Add CHECKs for positive prices/quantities/totals, USD sales currency, valid states, `0 <= Reserved <= OnHand`, `ExpiresAt = CreatedAt + interval '15 minutes'`, and positive versions. Precision/scale is explicit. Reject extra precision before SQL conversion; numeric scale alone could round.
-- Product SKU unique after normalization. One StockBalance/product, one Reservation/order/product, one order line/order/product. Product creation and initial zero stock row commit together.
+- Product SKU unique after normalization. One inventory Balance/product, one future Reservation/order/product, one order line/order/product. Product creation and initial zero stock row commit together.
 - Implemented IdempotencyRecords unique `(UserId,Operation,Key)` stores canonical text/32-byte hash, status, exact response bytes/type/Location and UTC timestamps, with a restrictive FK to Identity user. C collation preserves case-sensitive namespaces. A PostgreSQL trigger freezes request identity and completed snapshots. Future order/payment associations can add real FKs; no speculative entity is generated. Successful request/order/reservations/outbox commit together; no separately committed unfinished claim. This generalizes the previously planned CreateOrderRequests/PaymentRequests tables.
 - StartPayment's existing user/order/operation/key namespace is represented by operation `StartPayment:v1/{orderId:D}` in the shared store. Attempts (future) have independent UUID/provider request key; a partial unique index on OrderId covers states Queued/Pending/Unknown. Provider identity is namespaced by provider name. Unique `(Provider,ProviderCaptureId)` protects capture evidence; Orders.WinningCaptureId is nullable/unique, and Captures.AppliedOrderId is nullable/unique to allow only one winning capture per order. Association/amount/reservation checks remain transactional service rules.
 - Refunds are unique `(Provider,ProviderCaptureId,RefundPurpose)` with v1 purpose FullCompensation, and have their own unique provider refund key. Callback ProviderEvents are unique `(Provider,ProviderEventId)` and store authenticated payload hash/minimal structured facts; compare payload on duplicate. Never store signing secrets in those records.
-- StockHistory is unique `(OperationId,ProductId,EffectKind)`; effect kinds Adjustment/Reserve/Consume/Release. Use independent immutable operation IDs (order creation, cancellation/expiry transition, winning capture, admin adjustment). Sum of deltas from zero reconciles stock balances; Active reservation quantity sum reconciles Reserved. One effect per reservation transition is enforced by state guard and uniqueness.
+- Implemented StockMovements replaces the earlier planned StockHistory: unique `(Operation,OperationId)` for durable command identity and `(ProductId,Revision)` for ordered immutable effects. Initialization/Receipt/Adjustment are current kinds; receipt and adjustment share ChangeStock:v1 and compare actor/target/kind/delta/reason. Product initialization has its own namespace/product reference. [ADR-013](adr/0013-inventory-ledger-and-stock-commands.md) records this concrete ledger decision. Reservation identities/kinds and state-guard uniqueness arrive in 09; future reservation transitions must append their own distinct effects. Sum of all deltas from zero must reconcile balances; Active reservation quantity sum must reconcile Reserved when that model exists.
 - Future OrderHistory is unique `(OrderId,Version)`. Implemented OutboxMessages has EventId PK and a producer/aggregate/version/type unique effect index; ProcessedMessages inbox has `(ConsumerName,MessageId)` PK without an outbox FK. Both have state/attempt/due/lease/terminal checks and queue indexes. Future Notifications is unique `(EventId,Template,RecipientUserId)`; report snapshot primary key OrderId.
 - Index due PendingPayment orders by `(ExpiresAt,Id)`, due work by `(Status,NextAttemptAt,Id)`, active reservations by order, own orders by `(UserId,CreatedAt,Id)`, and order/payment/provider lookup FKs. Do not index arbitrary future search fields.
 
