@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/OrderFlow.Api/OrderFlow.Api.csproj" />
     <Project Path="src/OrderFlow.Application/OrderFlow.Application.csproj" />
+    <Project Path="src/OrderFlow.Simulator/OrderFlow.Simulator.csproj" />
     <Project Path="src/OrderFlow.Worker/OrderFlow.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">

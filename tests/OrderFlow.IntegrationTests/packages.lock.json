@@ -573,6 +573,12 @@
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
         }
       },
+      "orderflow.simulator": {
+        "type": "Project",
+        "dependencies": {
+          "OrderFlow.Application": "[1.0.0, )"
+        }
+      },
       "orderflow.worker": {
         "type": "Project",
         "dependencies": {

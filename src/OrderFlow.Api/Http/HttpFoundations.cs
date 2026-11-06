@@ -32,7 +32,7 @@ public static class HttpFoundations
             {
                 document.Info.Title = "OrderFlow API";
                 document.Info.Version = "v1";
-                document.Info.Description = "Identity cookies, Catalog, Inventory and idempotent checkout. Customer order lists/details enforce ownership and expose effective expiry without writes. Customer cancellation releases reservations atomically. Admin fulfillment permits Confirmed -> Processing -> Shipped -> Completed with expectedVersion. Browser writes require X-CSRF-TOKEN; checkout also needs Idempotency-Key. Money is a USD decimal string. Payment and automatic expiry workers are not implemented.";
+                document.Info.Description = "Identity cookies, Catalog, Inventory, idempotent checkout and payment initiation. Owner payment initiation persists a 202 attempt; provider observations never confirm orders in this milestone. Customer order reads expose effective expiry without writes. Cancellation and the separate expiry worker release reservations atomically. Admin fulfillment permits Confirmed -> Processing -> Shipped -> Completed with expectedVersion. Browser writes require X-CSRF-TOKEN; checkout and payment initiation need Idempotency-Key. Money is a USD decimal string. Callback settlement remains deferred.";
                 return Task.CompletedTask;
             });
             options.AddSchemaTransformer((schema, context, _) =>

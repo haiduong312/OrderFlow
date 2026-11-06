@@ -5,6 +5,7 @@ using OrderFlow.Application.Persistence;
 using OrderFlow.Api.Catalog;
 using OrderFlow.Api.Inventory;
 using OrderFlow.Application.Modules.Ordering;
+using OrderFlow.Application.Modules.Payments;
 
 namespace OrderFlow.Api;
 
@@ -21,6 +22,7 @@ public class Program
         builder.Services.AddScoped<CheckoutService>();
         builder.Services.AddScoped<OrderReadService>();
         builder.Services.AddScoped<OrderLifecycleService>();
+        builder.Services.AddScoped<PaymentInitiationService>();
         var app = builder.Build();
         // Validate final configuration before accepting any requests, including in test hosts.
         _ = app.Services.GetRequiredService<BrowserAuthSettings>();

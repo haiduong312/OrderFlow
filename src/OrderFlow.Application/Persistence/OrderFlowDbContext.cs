@@ -9,12 +9,18 @@ using OrderFlow.Application.Modules.Identity;
 using OrderFlow.Application.Modules.Catalog;
 using OrderFlow.Application.Modules.Inventory;
 using OrderFlow.Application.Modules.Ordering;
+using OrderFlow.Application.Modules.Payments;
+using OrderFlow.Application.Modules.Payments.Simulation;
 
 namespace OrderFlow.Application.Persistence;
 
 public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options)
 {
+    public DbSet<PaymentAttempt> PaymentAttempts => Set<PaymentAttempt>();
+    public DbSet<ProviderPayment> ProviderPayments => Set<ProviderPayment>();
+    public DbSet<ProviderScenario> ProviderScenarios => Set<ProviderScenario>();
+    public DbSet<ProviderRefund> ProviderRefunds => Set<ProviderRefund>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
@@ -39,6 +45,10 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.ApplyConfiguration(new PaymentAttemptConfiguration());
+        builder.ApplyConfiguration(new ProviderPaymentConfiguration());
+        builder.ApplyConfiguration(new ProviderScenarioConfiguration());
+        builder.ApplyConfiguration(new ProviderRefundConfiguration());
         builder.HasDefaultSchema("identity");
         builder.Entity<ApplicationUser>().ToTable("Users", "identity", table =>
             table.HasCheckConstraint("CK_Users_CreatedAt", "isfinite(\"CreatedAt\")"));

@@ -4,7 +4,7 @@ The separate Worker host now finalizes overdue PendingPayment orders. Outbox dis
 
 ## Code flow and transaction walkthrough
 
-`OrderExpiryWorker` schedules calls to `OrderExpiryIteration.ProcessAsync`. The callable iteration attempts at most BatchSize orders, sequentially. Each attempt creates/disposes an async DI scope and resolves a fresh scoped `OrderExpiryProcessor`/DbContext. No context is shared across attempts, workers or tasks. API never registers the scheduler.
+`OrderExpiryWorker` schedules calls to `OrderExpiryIteration.ProcessAsync`. The callable iteration attempts at most BatchSize orders, sequentially. Each attempt creates/disposes an async DI scope and resolves a fresh scoped `OrderExpiryProcessor`/DbContext. No context is shared across attempts, workers or tasks. API never registers the scheduler. Worker additionally offers opt-in dev/test payment processing (see [payments](payments.md)); expiry scheduling remains independent.
 
 For one order:
 

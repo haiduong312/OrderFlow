@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-06 (Asia/Ho_Chi_Minh). Current milestone: **14 expiry slice — bounded PostgreSQL order/reservation expiry in the separate Worker host**. Callable scoped processing, per-order SKIP LOCKED transactions, shared release logic, System audit history and atomic outbox are implemented. Customer order management/Admin fulfillment, checkout and existing slices remain available. Outbox dispatch/inbox processing (remaining 14), payment confirmation/consumption, UI and deployment remain pending.
+Updated: 2026-11-06 (Asia/Ho_Chi_Minh). Current milestone: **15 / submission foundations of 16 — durable payment initiation and restricted separate simulator host**. Authenticated owner initiation/current reads, one unresolved attempt/order, original 202 replay, server money/provider identity, lease-fenced submission/reconciliation, independent provider persistence, signed callback generation and provider-side idempotent full refunds are implemented. Order confirmation/consumption, callback receipt/settlement, merchant compensation, remaining dispatch/inbox 14, UI and deployment remain pending.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -44,8 +44,8 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 12 | Atomic CreateOrder/reserve + original response; stock/idempotency concurrency and rollback | 08a; checkout portions of 09–11 | A05, A06, A08 creation/replay, A16, A23 | Complete for requested checkout; see evidence and remaining lifecycle work below |
 | 13 | Own order reads/list, pending cancellation/release, requested Admin fulfillment and authorization/race regressions | 12 | A02, A07 release, A08, A09, A15 graph | Complete for requested scope; automatic expiry and payment/capture integration remain later |
 | 14 | Outbox dispatch/inbox and worker lease/retry foundation; expiry worker + deterministic races | 13 | A07–A09, A16–A19 | Expiry slice complete: bounded SKIP LOCKED worker + deterministic races; dispatch/inbox remain pending |
-| 15 | Payment attempt/intention schema, request idempotency, active-attempt constraint, customer start/read | 10, 14 | A12, A13, A23 | Pending |
-| 16 | Durable gateway simulator, submission/query worker, independent transaction boundary and uncertainty | 15 | A12, A13, A19, A23 | Pending |
+| 15 | Payment attempt/intention schema, request idempotency, active-attempt constraint, customer start/read | 10; expiry/worker foundations of 14 | A12, A13, A23 | Complete for requested initiation scope; verified settlement remains 17/18 |
+| 16 | Durable gateway simulator, submission/query worker, independent transaction boundary and uncertainty | 15 | A12, A13, A19, A23 | Provider/submission/reconciliation foundations complete; callback delivery/receipt and merchant compensation remain later |
 | 17 | Signed callback receipt/inbox, verification, duplicate/quarantine handling and replay tests | 16 | A13, A14 | Pending |
 | 18 | Atomic capture confirmation/stock consumption; late capture compensation/refund reconciliation and races | 17 | A07–A13, A16, A17, A19, A23 | Pending |
 | 19 | Admin fulfillment state machine, expected versions, order inspection and authorization | 13; verified payment integration 18 | A02, A15 | Requested list/detail/graph/expectedVersion APIs delivered in 13; verified payment-confirmed end-to-end integration remains 18/19 |
@@ -846,3 +846,71 @@ Three short interview questions (understand these before payment work):
 3. What happens if the worker stops after SQL release but before outbox commit? The transaction rolls back; a later pass retries durable PendingPayment data. A committed Expired order is ineligible, and unique effects/terminal guards protect repeated processing.
 
 Suggested commit title (adjusted to the explicitly requested partial milestone): `feat: add bounded PostgreSQL order expiry worker`.
+
+
+## Payment initiation and simulator — 15 / submission foundations of 16 (2026-11-06)
+
+### Inspection and scope clarification
+
+Initial git status was clean on main. Read AGENTS.md, specification/architecture/status/ADRs, existing order/expiry/cancellation/idempotency services, API auth/CSRF/error composition, Worker/seed path, six migrations, pinned SDK/packages/lockfiles and PostgreSQL harness/test seams before editing. No agents, commits, pushes, deployments, developer database migrations/data resets or real credentials were used.
+
+Two contradictions were reported before implementing dependent behavior: the latest request prefers an independent simulator host while previous architecture co-hosted its adapter; ADR-018 supersedes that detail. The request refers to deferred callback settlement as milestone 13, but repo 13 already implements order management and receipt/settlement are 17/18. Preserve IDs and defer those features. Requested scope implements 15 and provider/submission/reconciliation foundations of 16, not the outstanding outbox/inbox part of 14. There is no need to pretend a broker/dispatcher prerequisite is implemented: payment uses its own durable intention queue.
+
+### Acceptance and main decisions
+
+| Criterion | Result / evidence |
+| --- | --- |
+| IPaymentGateway boundary | Complete: submission, status lookup, provider full refund and refund lookup; bounded HTTP response/timeout, redirects/retries disabled, machine credentials separate from cookies |
+| Independent controllable provider | Complete: optional OrderFlow.Simulator Kestrel host, own configured PostgreSQL connection/transactions/no merchant FKs; tests use second owned database and random loopback port |
+| Safe simulator controls | Complete: explicit Development/Testing enablement, no Production/Staging, loopback URLs only, reject Kestrel endpoint overrides, three independent external secrets; no simulator routes in API |
+| Stable provider identities/idempotency | Complete: persisted request/transaction/capture/event/refund IDs; PostgreSQL advisory locks and unique constraints; same key/body replays, changes conflict; capture evidence cannot regress |
+| Scenarios / signed callback generation | Complete: Pending(default), Succeeded, Failed, timeout before accept, timeout after committed capture, mismatched amount; stable raw callback body/event ID + fresh timestamp HMAC; control credential required |
+| Owner initiation / server money | Complete: Customer cookie/CSRF + owner SQL, empty body/unknown-field rejection, immutable order USD amount, deadline/status under order lock; expired new requests commit release/history/outbox then 409 |
+| One unresolved attempt / client replay | Complete: partial unique active OrderId; same/different client-key races produce one attempt; original accepted bytes/status/Location persist; failed replacement requires new key and eligible order |
+| Committed intention before external call | Complete: endpoint commits Queued + client snapshot and returns 202; processor claim commits/disposes its scope, calls provider, stores observation in a fresh token-fenced transaction; independent NOWAIT probe proves locks are free at gateway invocation |
+| Timeout/mismatch/reconciliation | Complete: timeout is Unknown, never Failed; lookup/possible resubmit use the original provider key. Mismatch quarantines unresolved evidence. Eight deliveries with bounded delays; claim #8 marks NeedsAttention durably even if process dies during its call |
+| Provider success / frontend boundary | Complete for scope: observed success remains unresolved Pending/settlement_pending; no order confirmation, inventory consumption or browser success authority. Original client snapshot unchanged; current attempt read exposes latest observation |
+| Recovery and concurrency | Complete for tests: real HTTP timeout/provider-host restart, stale lease cannot overwrite newer success, merchant observation failure after provider capture recovers after lease expiry; no duplicate provider capture/attempt |
+| Refund scope | Provider-only idempotent full refund contract/result implemented and tested. No merchant refund intentions, compensation worker, paid-order cancellation/refund UX |
+| Deferred work | Callback delivery/receipt/signature verification/inbox/settlement, capture allocation/consumption/late compensation, operator replay tooling, remaining messaging/projections/UI/deployment |
+
+### Files / migration / dependencies
+
+- Application/Modules/Payments: PaymentAttempt, PaymentInitiationService/DTOs, IPaymentGateway contracts, SimulatorPaymentGateway HTTP adapter, callable PaymentProcessingIteration and Simulation provider entities/services/callback signer.
+- API/Payments/PaymentAttemptsController: POST own order payment-attempts and GET current own attempt; global cookie/CSRF/strict JSON policies retained. Program registration and OpenAPI description updated.
+- Worker/PaymentWorker + WorkerHost/appsettings: optional dev/test-only simulator transport, 20 sequential attempts/pass, cancellable 5s scheduling, separate scopes/phases and seed suppression. Payment processing defaults off; expiry remains independently enabled.
+- New optional src/OrderFlow.Simulator host, safe disabled sample settings, generated packages.lock.json; solution/test project reference updated. Core API/Worker/Application production boundaries remain; simulator cannot start in Production.
+- Migration **20261106084012_AddPaymentInitiationAndSimulator**, designer and snapshot: four additive tables, active/due/provider identity indexes, numeric/lease/state checks, restrictive FKs, SQL immutable attempt/provider/capture/refund guards. Existing data retained; Down refuses identity/data loss. No developer database updated.
+- PaymentAttemptTests adds 10 meaningful service-free domain cases; PaymentInitiationTests 12 PostgreSQL cases, PaymentGatewayTests 7, PaymentPersistenceTests 5, SimulatorCompositionTests 6 service-free cases, plus 3 production-route absence cases and migration-count adjustment.
+- [Payment walkthrough/runbook](payments.md), [ADR-018](adr/0018-payment-initiation-and-simulator.md), architecture/spec/README/testing/persistence/boundary docs updated.
+
+SDK remains 10.0.114, ASP.NET/.NET/EF/Identity/Hosting/dotnet-ef 10.0.14, Npgsql 10.0.3, Testcontainers.PostgreSql 4.16.0. No NuGet package/version was added/changed. New simulator lockfile contains existing transitive dependencies; IntegrationTests lockfile adds only the simulator project reference. Existing core/unit lockfiles and central pins are unchanged. Solution now has six projects.
+
+### Exact verification
+
+Used DOTNET_CLI_HOME=/tmp/orderflow-m02/dotnet-home, NUGET_PACKAGES=/tmp/orderflow-m02/packages, NUGET_HTTP_CACHE_PATH=/tmp/orderflow-m02/http-cache, telemetry opt-out and matching artifacts path. All binaries/TRX/generated SQL are under /tmp/orderflow-payments, logs /tmp/orderflow-payments-*.log. PostgreSQL actually ran in disposable Testcontainers; provider tests used true loopback Kestrel HTTP and separately owned provider DBs, not EF InMemory or in-memory gateway durability. No real secrets were printed/stored in deliverables. Official Microsoft HttpClient/HMAC/hosting and PostgreSQL partial-index documentation was consulted before version-sensitive implementation.
+
+1. `dotnet restore OrderFlow.slnx --artifacts-path /tmp/orderflow-payments/artifacts` — exit 0, generates only new project/reference lock information. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-payments/artifacts` — exit 0/all six projects. No package version changes.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-payments/artifacts` — final exit 0, **0 warnings/errors** (/tmp/orderflow-payments-build-final.log).
+3. `dotnet ef migrations add AddPaymentInitiationAndSimulator --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output-dir Persistence/Migrations` with `ArtifactsPath=/tmp/orderflow-payments/artifacts` — exit 0. Reviewed additive schema and added immutable/monotonic SQL guards plus downgrade refusal. Actual Up migrations executed only on owned test DBs; no Down executed. Design-only configuration had no password and did not connect to a database.
+4. `dotnet test OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-payments/artifacts --filter 'FullyQualifiedName~Payment|FullyQualifiedName~SimulatorComposition' --logger 'trx;LogFilePrefix=payments-final-focused' --results-directory /tmp/orderflow-payments/results` — exit 0, **9 unit + 30 integration passed**, 0 failed/skipped. TRX payments-final-focused_net10.0_20261106154823.trx and *_20261106154852.trx. Subsequent review added one crash-at-eighth-claim regression and durable attention fix; both included in final full/service-free runs below.
+5. `dotnet test OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-payments/artifacts --logger 'trx;LogFilePrefix=payments-final' --results-directory /tmp/orderflow-payments/results` — final exit 0, **104 unit + 287 integration = 391 passed**, 0 failed/skipped, including **200 real PostgreSQL cases**. TRX payments-final_net10.0_20261106155649.trx and *_20261106155847.trx. Earlier full run passed 390 before adding the crash-limit case; final rerun validates the fix and bounded provider-host disposal.
+6. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-payments/artifacts --filter 'Category!=PostgreSQL' --logger 'trx;LogFilePrefix=payments-service-free-final' --results-directory /tmp/orderflow-payments/results` — exit 0, **104 + 87 = 191 passed**, 0 failed/skipped, no PostgreSQL/provider network services. TRX payments-service-free-final_net10.0_20261106155950.trx and *_20261106155952.trx.
+7. `dotnet ef migrations has-pending-model-changes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` with matching ArtifactsPath — exit 0/no changes. `dotnet ef migrations script --idempotent --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output /tmp/orderflow-payments/migrations.sql` — exit 0; reviewed generated SQL includes custom guards. No developer migration applied.
+8. `git diff --check` and local Markdown link/fence/table verification passed. Final read-only Docker test-container inventory found no remaining containers; no user containers were stopped/deleted. Final documentation check: 34 Markdown files, 310 valid local links, balanced fences/consistent tables.
+
+### Flow explanation, manual checks, trade-offs
+
+Luồng chính: Customer gọi initiation bằng cookie/CSRF và client key, server khóa order để kiểm tra owner/deadline rồi ghi Queued attempt + response 202 trong một transaction. Worker claim một attempt, commit/hủy scope trước khi gọi gateway qua HTTP. Sau đó dùng scope mới, kiểm tra lease token rồi ghi observation. Timeout giữ Unknown và provider key cũ; success chỉ là observation chờ settlement, không đổi order thành Confirmed. Simulator lưu transaction/capture độc lập nên restart hoặc mất response vẫn query lại được cùng giao dịch.
+
+Manual commands/configuration are in [payments](payments.md): migrate merchant (and optionally independent provider DB) explicitly, start restricted simulator with private machine/control/signing keys and Development environment, keep PaymentProcessing off while choosing a per-key scenario, then enable/start Worker with loopback BaseUrl/matching machine key. Use authenticated POST /api/orders/{id}/payment-attempts with empty body + CSRF + Idempotency-Key, GET its Location for current state, compare same-key response bytes, and use a new key only after definitive failure. Normal expiry stays independent. Full payment integration tests require Docker by default or private ORDERFLOW_TEST_POSTGRES to actual PostgreSQL; missing prerequisites fail honestly. Unit/service-free checks require neither.
+
+Trade-offs/limitations: optional fourth dev/test host and secrets add setup; the common migration chain means standalone provider DBs include unused merchant tables. Polling adds lag; accepted intent may reach provider after expiry/cancellation, and future settlement must enforce deadline/compensation. Eight-delivery exhaustion remains unresolved/visible and blocks replacements; audited replay tooling is deferred. Callback envelopes are generated but not sent/received/settled. No merchant Capture/Refund compensation or real provider/production payment guarantee. Registration and callable processing/network phases are tested; OS-process kill/network partition/uncertain commit, extended hosted-loop operability, runtime DB least privilege and deployment readiness remain later verification. No exactly-once external side-effect claim.
+
+Three interview questions (understand before signed settlement work):
+
+1. Why commit the intention before calling the gateway? Restart/timeout can find the durable attempt and reuse the same provider key; no business lock is held over HTTP.
+2. Why keep timeout Unknown? Provider may already have captured; another attempt/key could charge again. Query/retry the original provider identity.
+3. Why both lease token and provider idempotency? Token fences stale database observations; provider key protects repeated external effects when a lease expires or a response is lost.
+
+Suggested commit title (adjusted to delivered scope): `feat: add idempotent payment initiation and isolated simulator`.

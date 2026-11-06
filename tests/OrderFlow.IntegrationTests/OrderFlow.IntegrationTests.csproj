@@ -11,5 +11,6 @@
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <ProjectReference Include="../../src/OrderFlow.Api/OrderFlow.Api.csproj" />
     <ProjectReference Include="../../src/OrderFlow.Worker/OrderFlow.Worker.csproj" />
+    <ProjectReference Include="../../src/OrderFlow.Simulator/OrderFlow.Simulator.csproj" />
   </ItemGroup>
 </Project>

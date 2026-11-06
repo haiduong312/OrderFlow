@@ -15,6 +15,9 @@ public class CompositionSmokeTests
     [Theory]
     [InlineData("/_tests/auth/admin")]
     [InlineData("/_tests/auth/unsafe")]
+    [InlineData("/control/payments/example/resolve")]
+    [InlineData("/provider/payments")]
+    [InlineData("/api/payments/simulator/callback")]
     [InlineData("/_tests/resource-authorization/customer/00000000-0000-0000-0000-000000000001")]
     public async Task Production_host_does_not_discover_test_probe_controllers(string path)
     {

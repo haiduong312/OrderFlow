@@ -153,3 +153,9 @@ Apply **20261105084550_AddOrderManagement** as the same dedicated operator step.
 ## System expiry audit migration (14 expiry slice)
 
 Apply **20261106081044_AddSystemOrderExpiry** explicitly after building. It preserves human audit facts/triggers/FKs, makes OrderStatusHistory.ActorUserId nullable and restricts System facts to PendingPayment -> Expired/null user; inventory release checks additionally allow System expiry. No service account/backfill/due-work table is created. The existing partial Orders(ExpiresAt,Id) index supports SKIP LOCKED selection. Downgrade is refused to preserve System facts. Coordinate API/Worker versions and nullable history clients before enabling the worker; see the [expiry runbook](expiry-worker.md). Tests migrate only fresh owned databases; hosts still never migrate automatically.
+
+## Payment/provider persistence (15 / submission foundations of 16)
+
+Migration **20261106084012_AddPaymentInitiationAndSimulator** adds payments.PaymentAttempts and simulator.ProviderPayments/ProviderScenarios/ProviderRefunds. Partial uniqueness protects one unresolved Queued/Pending/Unknown attempt per order; attempts store server money, stable provider key, due/retry/lease metadata and observations. Shared IdempotencyRecords store original 202 client snapshots under StartPayment:v1/{orderId:D}. SQL triggers freeze immutable attempt/provider identities and monotonic captured evidence; provider refunds are immutable. Existing tables/rows are retained; Down refuses data loss.
+
+Provider tables have no merchant FKs and may run in a separately configured database/server. Both hosts use the common migration chain (a standalone provider database therefore contains unused merchant tables); provider operations use independent transactions and never access merchant records. Hosts never migrate automatically. See [payments](payments.md) for setup, constraints, network boundaries and deferred settlement/refund workflow.
