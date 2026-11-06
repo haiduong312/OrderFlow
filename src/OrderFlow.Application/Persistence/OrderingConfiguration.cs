@@ -60,7 +60,7 @@ public sealed class OrderStatusHistoryConfiguration : IEntityTypeConfiguration<O
         builder.ToTable("OrderStatusHistory", "ordering", table =>
         {
             table.HasCheckConstraint("CK_OrderStatusHistory_Metadata", "\"Version\" > 0 AND isfinite(\"OccurredAt\") AND length(btrim(\"Reason\")) > 0 AND \"Status\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired')");
-            table.HasCheckConstraint("CK_OrderStatusHistory_Actor", "\"ActorKind\" IN ('Customer','Admin') AND (\"FromStatus\" IS NULL OR \"FromStatus\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired'))");
+            table.HasCheckConstraint("CK_OrderStatusHistory_Actor", "((\"ActorKind\" IN ('Customer','Admin') AND \"ActorUserId\" IS NOT NULL) OR (\"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL AND \"FromStatus\" IS NOT NULL AND \"FromStatus\" = 'PendingPayment' AND \"Status\" = 'Expired')) AND (\"FromStatus\" IS NULL OR \"FromStatus\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired'))");
         });
         builder.HasKey(history => new { history.OrderId, history.Version });
         builder.Property(history => history.Status).HasConversion<string>().HasMaxLength(32).IsRequired();

@@ -59,7 +59,8 @@ public sealed class StockMovementConfiguration : IEntityTypeConfiguration<StockM
                  AND "OnHandDelta" = 0 AND "ReservedDelta" BETWEEN 1 AND 1000)
                 OR
                 ("Kind" = 'Release' AND "Operation" = 'ReleaseStock:v1'
-                 AND "ActorKind" = 'Customer' AND "ActorUserId" IS NOT NULL AND "Revision" > 0
+                 AND (("ActorKind" = 'Customer' AND "ActorUserId" IS NOT NULL)
+                      OR ("ActorKind" = 'System' AND "ActorUserId" IS NULL AND "Reason" = 'Reservation released: Expired')) AND "Revision" > 0
                  AND "OrderId" IS NOT NULL AND "ReservationId" IS NOT NULL AND "OperationId" = "ReservationId"
                  AND "OnHandDelta" = 0 AND "ReservedDelta" BETWEEN -1000 AND -1)
                 """);

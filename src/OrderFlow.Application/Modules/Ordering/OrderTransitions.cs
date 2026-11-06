@@ -5,6 +5,9 @@ namespace OrderFlow.Application.Modules.Ordering;
 
 public static class OrderTransitions
 {
+    public static bool CanExpire(OrderStatus status, DateTimeOffset expiresAt, DateTimeOffset now) =>
+        status == OrderStatus.PendingPayment && BusinessTime.HasExpired(now, expiresAt);
+
     public static bool CanAdvanceFulfillment(OrderStatus from, OrderStatus to) => (from, to) is
         (OrderStatus.Confirmed, OrderStatus.Processing) or
         (OrderStatus.Processing, OrderStatus.Shipped) or

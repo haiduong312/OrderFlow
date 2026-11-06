@@ -43,7 +43,7 @@ public sealed record OrderSummaryResponse(Guid Id, Guid CustomerId, string Statu
 public sealed record OrderPage(IReadOnlyList<OrderSummaryResponse> Items, int Page, int PageSize, int TotalCount);
 
 public sealed record OrderStatusHistoryResponse(int Version, string? FromStatus, string Status,
-    string ActorKind, Guid ActorUserId,
+    string ActorKind, Guid? ActorUserId,
     [property: JsonConverter(typeof(OrderTimestampJsonConverter))] DateTimeOffset OccurredAt, string Reason);
 
 // Read DTOs evolve independently of the immutable checkout response bytes.

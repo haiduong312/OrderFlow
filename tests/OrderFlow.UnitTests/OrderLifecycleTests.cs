@@ -10,6 +10,42 @@ public sealed class OrderLifecycleTests
 {
     private static readonly DateTimeOffset Now = new(2035, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    public void System_expiry_requires_pending_and_due_and_appends_one_system_fact(int microseconds, bool due)
+    {
+        var order = Create();
+        var history = order.Expire(order.ExpiresAt.AddTicks(microseconds * 10));
+        Assert.Equal(due, history is not null);
+        Assert.Equal(due ? 2 : 1, order.Version);
+        if (due)
+        {
+            Assert.Equal(OrderActorKind.System, history!.ActorKind); Assert.Null(history.ActorUserId);
+            Assert.Equal(OrderStatus.PendingPayment, history.FromStatus); Assert.Equal(OrderStatus.Expired, history.Status);
+            Assert.Null(order.Expire(order.ExpiresAt.AddHours(1)));
+            Assert.Equal(2, order.Version);
+        }
+        foreach (var status in Enum.GetValues<OrderStatus>().Where(status => status != OrderStatus.PendingPayment))
+            Assert.False(OrderTransitions.CanExpire(status, order.ExpiresAt, order.ExpiresAt.AddDays(1)));
+    }
+
+    [Fact]
+    public void System_can_release_expired_stock_but_cannot_impersonate_customer_cancellation()
+    {
+        var actor = Guid.NewGuid(); var product = Guid.NewGuid();
+        var balance = InventoryBalance.Zero(product);
+        balance.Change(Guid.NewGuid(), StockMovementKind.Receipt, 10, "Opening", actor, Now);
+        var reservation = InventoryReservation.Create(Guid.NewGuid(), product, 3, Now);
+        balance.Reserve(reservation, actor);
+        Assert.Throws<ArgumentException>(() => balance.Release(reservation, ReservationReleaseReason.Cancelled, null, Now));
+        var movement = balance.Release(reservation, ReservationReleaseReason.Expired, null, Now.AddMinutes(15))!;
+        Assert.Equal(StockActorKind.System, movement.ActorKind); Assert.Null(movement.ActorUserId);
+        Assert.Equal(10, balance.OnHand); Assert.Equal(0, balance.Reserved);
+        Assert.Null(balance.Release(reservation, ReservationReleaseReason.Expired, null, Now.AddHours(1)));
+    }
+
     [Fact]
     public void Only_the_three_forward_fulfillment_edges_are_legal()
     {

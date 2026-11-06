@@ -234,3 +234,7 @@ Race tests must use separate connections/DbContexts and deterministic gates/barr
 ## 9. Deferred features
 
 Outside v1: real payment providers, card handling, homemade JWT/refresh tokens, microservices, message broker, Redis/distributed cache, event sourcing, generic CQRS/MediatR scaffolding, paid-order cancellation, returns, customer refunds, discounts, tax, shipping fees/providers/addresses, multiple sales currencies, guest checkout, split/partial payments, partial refunds, stock locations/backorders, product images/uploads, email/SMS provider integration, self-service password reset/email verification, social login/MFA, public Admin registration, analytics beyond the stated report, automated data retention/deletion, and deployment to a public environment. Do not implement these as prerequisites unless a later milestone explicitly changes scope.
+
+## Implementation note — milestone 14 expiry slice
+
+The separate Worker now finalizes due PendingPayment orders with one SKIP LOCKED order transaction per attempt, bounded passes and injected UTC decision time after locking. Automatic expiry history uses System/null ActorUserId; customer-triggered expiry retains its Customer actor. Release affects only Active reservations; already Released facts stay immutable, while consumed/missing/mismatched facts on a pending order are reported as inconsistent. No clock-control/test endpoint or broker dependency is introduced. See the [expiry worker runbook](expiry-worker.md); messaging dispatch/inbox, payment and later delivery semantics above remain planned.

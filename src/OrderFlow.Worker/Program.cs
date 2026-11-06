@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Identity;
 
 var seedAccount = args is ["seed-development-account"];
 var seed = args is ["seed-development"] || seedAccount;
-using var host = WorkerHost.Build(seed ? [] : args);
+using var host = WorkerHost.Build(seed ? [] : args, runBackgroundJobs: !seed);
 if (seed)
 {
     if (!host.Services.GetRequiredService<IHostEnvironment>().IsDevelopment())

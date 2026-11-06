@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using OrderFlow.Application.Common.Authorization;
 using OrderFlow.Application.Common.Errors;
 using OrderFlow.Application.Common.Time;
-using OrderFlow.Application.Modules.Inventory;
 using OrderFlow.Application.Persistence;
 
 namespace OrderFlow.Application.Modules.Ordering;
@@ -71,29 +70,7 @@ public sealed class OrderLifecycleService(OrderFlowDbContext database, ICurrentU
         var history = order.Cancel(ownerId, now);
         if (history is not null)
         {
-            var items = await database.OrderItems.AsNoTracking().Where(item => item.OrderId == id).ToListAsync(cancellationToken);
-            var balances = await InventoryLocking.LockAsync(database, items.Select(item => item.ProductId), cancellationToken);
-            var reason = order.Status == OrderStatus.Expired ? ReservationReleaseReason.Expired : ReservationReleaseReason.Cancelled;
-            // Reuse the same product order for balance and reservation locks. Never acquire a
-            // catalog/order lock later while holding inventory locks.
-            foreach (var balance in balances)
-            {
-                var reservation = await database.InventoryReservations.FromSqlInterpolated($"""
-                    SELECT * FROM inventory."InventoryReservations"
-                    WHERE "OrderId" = {id} AND "ProductId" = {balance.ProductId} FOR UPDATE
-                    """).SingleOrDefaultAsync(cancellationToken)
-                    ?? throw new InvalidOperationException("A pending order item has no reservation.");
-                var item = items.Single(item => item.ProductId == balance.ProductId);
-                if (reservation.Status != ReservationStatus.Active || reservation.Quantity != item.Quantity
-                    || reservation.CreatedAt != order.CreatedAt || reservation.ExpiresAt != order.ExpiresAt)
-                    throw new InvalidOperationException("A pending order has inconsistent reservation facts.");
-                var movement = balance.Release(reservation, reason, ownerId, now)
-                    ?? throw new InvalidOperationException("An active reservation was not released.");
-                database.StockMovements.Add(movement);
-                // Each release is real SQL, still inside the same transaction. A later
-                // reservation/history/outbox failure rolls every earlier effect back.
-                await database.SaveChangesAsync(cancellationToken);
-            }
+            await OrderReservationRelease.ReleaseAsync(database, order, ownerId, now, cancellationToken);
             database.OrderStatusHistory.Add(history);
             database.OutboxMessages.Add(OrderEvents.Create(order,
                 order.Status == OrderStatus.Expired ? "ordering.order-expired" : "ordering.order-cancelled", now, Guid.NewGuid()));

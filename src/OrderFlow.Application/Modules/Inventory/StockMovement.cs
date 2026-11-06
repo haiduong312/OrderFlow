@@ -70,12 +70,12 @@ public sealed class StockMovement
         ReservedAfter = reserved + reservation.Quantity, Revision = revision, OccurredAt = reservation.CreatedAt
     };
 
-    internal static StockMovement Release(InventoryReservation reservation, Guid actorId,
+    internal static StockMovement Release(InventoryReservation reservation, Guid? actorId,
         int onHand, int reserved, long revision) => new()
     {
         Id = Guid.NewGuid(), ProductId = reservation.ProductId, Operation = ReleaseOperation,
         OperationId = reservation.Id, OrderId = reservation.OrderId, ReservationId = reservation.Id,
-        Kind = StockMovementKind.Release, ActorKind = StockActorKind.Customer, ActorUserId = actorId,
+        Kind = StockMovementKind.Release, ActorKind = actorId is null ? StockActorKind.System : StockActorKind.Customer, ActorUserId = actorId,
         Reason = reservation.ReleaseReason == ReservationReleaseReason.Expired ? "Reservation released: Expired" : "Reservation released: Cancelled",
         OnHandDelta = 0, ReservedDelta = -reservation.Quantity, OnHandBefore = onHand, OnHandAfter = onHand,
         ReservedBefore = reserved, ReservedAfter = reserved - reservation.Quantity, Revision = revision,

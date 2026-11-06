@@ -47,7 +47,7 @@ public class CompositionSmokeTests
     [Fact]
     public async Task Worker_starts_and_stops_without_external_services()
     {
-        using var host = WorkerHost.Build(["--environment", Environments.Production]);
+        using var host = WorkerHost.Build(["--environment", Environments.Production, "--OrderExpiry:Enabled", "false"]);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
         Assert.Same(TimeProvider.System, host.Services.GetRequiredService<TimeProvider>());

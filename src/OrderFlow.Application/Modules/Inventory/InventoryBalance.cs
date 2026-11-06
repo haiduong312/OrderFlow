@@ -27,10 +27,11 @@ public sealed class InventoryBalance
         return movement;
     }
 
-    public StockMovement? Release(InventoryReservation reservation, ReservationReleaseReason reason, Guid actorId, DateTimeOffset now)
+    public StockMovement? Release(InventoryReservation reservation, ReservationReleaseReason reason, Guid? actorId, DateTimeOffset now)
     {
-        if (reservation.ProductId != ProductId || actorId == Guid.Empty)
-            throw new ArgumentException("A reservation for this product and a customer actor are required.");
+        if (reservation.ProductId != ProductId || actorId == Guid.Empty
+            || (actorId is null && reason != ReservationReleaseReason.Expired))
+            throw new ArgumentException("A matching reservation and customer actor, or system expiry, are required.");
         if (reservation.Status == ReservationStatus.Released) return null;
         if (reservation.Status != ReservationStatus.Active) throw new ApplicationFailureException(ApplicationError.StateConflict);
         if (Reserved < reservation.Quantity) throw new InvalidOperationException("Reserved stock does not cover its active reservation.");

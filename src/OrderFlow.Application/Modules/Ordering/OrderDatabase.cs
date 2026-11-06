@@ -4,7 +4,7 @@ using OrderFlow.Application.Persistence;
 
 namespace OrderFlow.Application.Modules.Ordering;
 
-internal static class OrderDatabase
+public static class OrderDatabase
 {
     public static Task SetTimeoutsAsync(OrderFlowDbContext database, CancellationToken cancellationToken) =>
         database.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '20s'", cancellationToken);

@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-05 (Asia/Ho_Chi_Minh). Current milestone: **13 — owner-scoped order management and serialized lifecycle transitions**. Customer list/detail/cancellation, read-only effective-expiry views and release-once cancellation/expiry are implemented. The requested Admin list/detail and Confirmed -> Processing -> Shipped -> Completed portion of 19 ships now with expectedVersion, PostgreSQL order-first locking, OrderStatusHistory and atomic outbox. Payment confirmation/consumption, automatic expiry/dispatch, UI and deployment remain pending.
+Updated: 2026-11-06 (Asia/Ho_Chi_Minh). Current milestone: **14 expiry slice — bounded PostgreSQL order/reservation expiry in the separate Worker host**. Callable scoped processing, per-order SKIP LOCKED transactions, shared release logic, System audit history and atomic outbox are implemented. Customer order management/Admin fulfillment, checkout and existing slices remain available. Outbox dispatch/inbox processing (remaining 14), payment confirmation/consumption, UI and deployment remain pending.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -43,7 +43,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 11 | Complete Order/item snapshots/lifecycle and transactional events on reservation/Order foundations | 07, 09 | A03, A07, A08 | Creation delivered in 12; cancellation/expiry and fulfillment/history in 13; confirmation/payment integration remains 18 |
 | 12 | Atomic CreateOrder/reserve + original response; stock/idempotency concurrency and rollback | 08a; checkout portions of 09–11 | A05, A06, A08 creation/replay, A16, A23 | Complete for requested checkout; see evidence and remaining lifecycle work below |
 | 13 | Own order reads/list, pending cancellation/release, requested Admin fulfillment and authorization/race regressions | 12 | A02, A07 release, A08, A09, A15 graph | Complete for requested scope; automatic expiry and payment/capture integration remain later |
-| 14 | Outbox dispatch/inbox and worker lease/retry foundation; expiry worker + deterministic races | 13 | A07–A09, A16–A19 | Pending |
+| 14 | Outbox dispatch/inbox and worker lease/retry foundation; expiry worker + deterministic races | 13 | A07–A09, A16–A19 | Expiry slice complete: bounded SKIP LOCKED worker + deterministic races; dispatch/inbox remain pending |
 | 15 | Payment attempt/intention schema, request idempotency, active-attempt constraint, customer start/read | 10, 14 | A12, A13, A23 | Pending |
 | 16 | Durable gateway simulator, submission/query worker, independent transaction boundary and uncertainty | 15 | A12, A13, A19, A23 | Pending |
 | 17 | Signed callback receipt/inbox, verification, duplicate/quarantine handling and replay tests | 16 | A13, A14 | Pending |
@@ -233,6 +233,8 @@ Commands/results:
 Initial build attempts caught a WriteAsJsonAsync overload mismatch and an xUnit2031 analyzer error; both corrected without suppressions using the installed reference signature/preferred assertion. A premature no-build test invocation could run only UnitTests before the integration assembly existed and exited 1; it is not claimed as a passing suite. The first complete test run caught two real issues: nullable money schema metadata and original route template loss after exception handling. Both were fixed. Actual Kestrel console inspection then revealed native framework scopes included raw RequestPath despite safe event fields. Disabled API JSON IncludeScopes and added a regression through the actual configured JSON formatter with synthetic sensitive scope markers; final full suite passed all 86 tests. Trace remains an explicit event field. Tests assert actual body/status/header/log fields and cancellation progression, not arbitrary sleeps.
 
 There is no SQL/EF InMemory/SQLite test or actual database provider in this milestone. A synthetic DbException tests HTTP classification only, not SQL behavior. No authentication, ownership query, antiforgery, CRUD, price arithmetic, reservation, collection query or job is implemented. Pagination sorting remains a documented SQL convention until queries exist. Current production DTOs have no timestamp field; future timestamp JSON must still emit specification-compliant Z strings. Native pre-pipeline/response-started transport failures cannot be promised a fresh complete ProblemDetails body. Windows/macOS and proxy/HTTPS deployment were not exercised.
+
+9. After strengthening only the HTTP assertions, `dotnet test tests/OrderFlow.IntegrationTests -c Release --no-restore --artifacts-path /tmp/orderflow-expiry/artifacts --filter 'FullyQualifiedName~Deadline_uses_injected_UTC_microsecond_boundary' --logger 'trx;LogFilePrefix=expiry-http-boundary' --results-directory /tmp/orderflow-expiry/results` — exit 0, **3/3 passed**. Verifies current HTTP status/version/effective expiry and System/null actor JSON. TRX expiry-http-boundary_net10.0_20261106151918.trx. No production code changed after the full suite.
 
 ### Manual verification, trade-offs and interview preparation
 
@@ -780,3 +782,67 @@ Remaining/unverified: automatic expiry/dispatch worker, verified payment confirm
 3. **GET có nên tự sửa Expired không, và expectedVersion còn cần khi đã có row lock?** Hiểu read-only effective expiry tránh side effects, còn expectedVersion bảo vệ ý định Admin từ màn hình cũ dù SQL đã serialize các request.
 
 No commit title was supplied. Suggested: `feat: add order management and serialized lifecycle transitions`.
+
+
+## Milestone 14 expiry slice — 2026-11-06
+
+### Inspection, scope and decisions
+
+User explicitly requested the reservation/order expiry worker, not messaging dispatch. Initial git status was clean on main. Read root AGENTS.md, spec/architecture/status/ADRs, existing Worker composition/seed path, lifecycle/cancellation/domain rules, shared context/mappings, five migrations, pinned SDK/packages/locks and real-PostgreSQL harness/race tests before editing. No behavioral contradiction with ADR-003/016 was found. Roadmap 14 remains partly pending: this delivers expiry only. No agents, commit, push, deployment, developer database migration/reset, real credential fixture or unrelated package/feature was introduced.
+
+ADR-017 records one due order per transaction via FOR UPDATE SKIP LOCKED, one fresh DI scope/context per attempt and bounded passes. Existing cancellation release SQL is extracted/reused instead of duplicated. System history uses null human ID; customer-triggered expiry retains Customer actor. Already Released reservation facts are preserved, Active quantities release once, and Consumed/missing/mismatched pending-order facts fail visibly. Generic Host handles unexpected worker errors by logging/stopping; known PostgreSQL contention is counted/logged and ends the pass until the next delayed iteration.
+
+### Acceptance
+
+| Criterion | Result / evidence |
+| --- | --- |
+| Separate worker + callable iteration | Complete: OrderExpiryWorker only in Worker; OrderExpiryIteration can run without scheduler; async scope/context per order; seed explicitly suppresses jobs |
+| Due eligibility / injected time | Complete: PendingPayment and ExpiresAt <= normalized UTC; locked domain recheck; -1/0/+1 microsecond tests and other-status/not-yet-due isolation |
+| PostgreSQL coordination and bounded work | Complete: parameterized ordered LIMIT 1 FOR UPDATE SKIP LOCKED; existing due index; 1–100 attempts/pass; each order commits separately; local lock/statement timeouts and cancellation |
+| Atomic expiry/release/history/outbox | Complete: shared ordered balance/reservation release; real per-product SQL flushes stay in the order transaction; System Expired history + ordering.order-expired event/version commit together |
+| Release exactly once / invariants | Complete for tested database effects: repeated passes, two independent hosts/shared products, already Released facts, cancellation overlap; fresh DB asserts unique releases, ledger/Active sums, OnHand unchanged and 0 <= Reserved <= OnHand |
+| Cancellation competition | Complete: both contenders reach pre-order SQL gate; one release transaction. Separate deterministic test pauses an unexpired cancellation after its locked decision; worker skips it at deadline, and cancellation commits Cancelled once |
+| Rollback / restart recovery | Complete for graceful/in-process host recovery: deliberate outbox failure after two release SQL writes; stop scheduled worker mid-release; fresh host/process iteration discovers remaining due data; batch-size-one backlog resumes |
+| Prompt stop / polling control | Complete: token flows into DB and pauses; real scheduler test stops inside release transaction, another cancels an observed 300-second delay without sleeping through it |
+| Configuration / test independence | Complete: bounds validated on startup; explicit loop-off service-free smoke/seed mode; no API scheduler or test endpoint; unit/service-free tests have no external service dependency |
+| Messaging/payment scope | Remaining: dispatch/inbox, broker/consumer processing, payment settlement/consumption/refunds; expiry only stores Pending outbox intentions |
+
+### Files and migration
+
+- Application/Modules/Ordering: OrderExpiryProcessor, OrderReservationRelease, Order.Expire/OrderTransitions.CanExpire; cancellation reuses release helper. OrderDatabase contention classification is shared with Worker. History/read DTOs allow System/null user.
+- Application/Modules/Inventory: System expiry Release movement, unchanged OnHand and terminal reservation semantics; mappings extend actor checks.
+- Worker: OrderExpiryIteration, OrderExpiryWorker, OrderExpiryOptions, composition/configuration and seed-mode job suppression.
+- Migration **20261106081044_AddSystemOrderExpiry**, generated designer/model snapshot: nullable history ActorUserId, System actor shape checks; preserves existing rows/FKs/triggers/indexes. Generated downgrade would fabricate empty UUIDs; replaced with explicit refusal before any downgrade execution. Old history-reader binaries require coordinated replacement before System writes. No due-work table or service account.
+- Tests: OrderExpiryTests (14 PostgreSQL cases), WorkerCompositionTests (5 service-free cases), 4 additional domain cases plus smoke/migration-count adjustment. Existing lifecycle HTTP/SQL/security tests remain intact.
+- Runbook [expiry-worker.md](expiry-worker.md), [ADR-017](adr/0017-order-expiry-worker.md), README/architecture/spec/order/persistence/testing and boundary docs updated.
+
+### Exact checks and results
+
+SDK remains 10.0.114; .NET/ASP.NET/EF/Identity/Hosting/dotnet-ef 10.0.14; Npgsql 10.0.3; Testcontainers.PostgreSql 4.16.0. Package/SDK/project/lockfile graph unchanged. Used DOTNET_CLI_HOME=/tmp/orderflow-m02/dotnet-home, NUGET_PACKAGES=/tmp/orderflow-m02/packages, NUGET_HTTP_CACHE_PATH=/tmp/orderflow-m02/http-cache and telemetry opt-out. All artifacts/logs/TRX/generated SQL are under /tmp/orderflow-expiry (logs also /tmp/orderflow-expiry-*.log). PostgreSQL actually ran through Testcontainers, with generated private fixture credentials; no EF InMemory/SQLite substitute.
+
+1. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-expiry/artifacts` — exit 0/all five projects; no dependency changes. Initial sandbox restore/build exited 1 without actionable compiler diagnostics; approved execution outside the sandbox succeeded.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-expiry/artifacts` — exit 0, 0 warnings/errors. Focused test commands subsequently rebuilt the final migration/tests successfully.
+3. `dotnet ef migrations add AddSystemOrderExpiry --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output-dir Persistence/Migrations` with matching `ArtifactsPath=/tmp/orderflow-expiry/artifacts` — exit 0. The initial metadata attempt used the default artifacts path and failed NETSDK1004; setting the matching environment path resolved it. Design-only connection has no password and does not contact a database. Reviewed Up preserves data; Down refuses destructive/null-actor conversion. Tests execute actual Up migrations in owned databases only.
+4. `dotnet test OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-expiry/artifacts --filter 'FullyQualifiedName~OrderExpiry|FullyQualifiedName~WorkerComposition|FullyQualifiedName~OrderLifecycle' --logger 'trx;LogFilePrefix=expiry-focused-final' --results-directory /tmp/orderflow-expiry/results` — exit 0, **14 unit + 19 integration = 33 passed**, 0 failed/skipped. TRX expiry-focused-final_net10.0_20261106151335.trx and *_20261106151355.trx. Includes all 14 real-PostgreSQL expiry cases and 5 service-free Worker composition cases.
+5. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-expiry/artifacts --logger 'trx;LogFilePrefix=expiry-full' --results-directory /tmp/orderflow-expiry/results` — exit 0, **94 unit + 254 integration = 348 passed**, 0 failed/skipped. Includes 176 actual PostgreSQL tests; TRX expiry-full_net10.0_20261106151414.trx and *_20261106151548.trx.
+6. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-expiry/artifacts --filter 'Category!=PostgreSQL' --logger 'trx;LogFilePrefix=expiry-service-free' --results-directory /tmp/orderflow-expiry/results` — exit 0, **94 + 78 = 172 passed**, 0 failed/skipped, no PostgreSQL fixture required. TRX expiry-service-free_net10.0_20261106151700.trx and *_20261106151702.trx.
+7. `dotnet ef migrations has-pending-model-changes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` and `dotnet ef migrations script --idempotent --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output /tmp/orderflow-expiry/migrations.sql`, with matching ArtifactsPath — both exit 0/no model drift; reviewed additive SQL generated without applying it to a developer database.
+8. `git diff --check` and the local Markdown link/fence/table checker — passed. Markdown checker: 32 files, 289 local links, balanced fences/consistent tables. Final read-only Docker inventory after the boundary run found zero remaining test containers; no user containers were stopped/deleted.
+
+9. After strengthening only the HTTP assertions, `dotnet test tests/OrderFlow.IntegrationTests -c Release --no-restore --artifacts-path /tmp/orderflow-expiry/artifacts --filter 'FullyQualifiedName~Deadline_uses_injected_UTC_microsecond_boundary' --logger 'trx;LogFilePrefix=expiry-http-boundary' --results-directory /tmp/orderflow-expiry/results` — exit 0, **3/3 passed**. Verifies current HTTP status/version/effective expiry and System/null actor JSON. TRX expiry-http-boundary_net10.0_20261106151918.trx. No production code changed after the full suite.
+
+### Manual verification, trade-offs and interview preparation
+
+See [expiry walkthrough](expiry-worker.md) for migration/private configuration, API checkout/current-read flow and two-worker commands. Run `dotnet run --project src/OrderFlow.Worker -c Release --no-build --no-restore --no-launch-profile` after explicit migration; normal processing requires PostgreSQL. Seed commands never start expiry. Set OrderExpiry__Enabled=false explicitly for idle composition only. Automated exact-boundary commands require Docker by default, or private ORDERFLOW_TEST_POSTGRES pointing to actual PostgreSQL; unavailable prerequisites fail honestly. All unit/service-free checks remain independent.
+
+Luồng chính: Worker gọi một lượt có giới hạn; mỗi order có scope/context/transaction riêng. PostgreSQL chọn và khóa order PendingPayment đến hạn, bỏ qua hàng đang bị khóa. Domain kiểm tra lại deadline rồi chuyển Expired. Cùng transaction đó giải phóng phần giữ hàng còn Active theo thứ tự product ID, ghi movement/history/outbox rồi commit. Trước commit mà lỗi/dừng thì rollback; khởi động lại tìm lại dữ liệu PendingPayment còn đến hạn. API GET chỉ đọc và hiển thị effective expiry, không chạy batch xử lý.
+
+Trade-offs/remaining: polling retains stock conservatively until a pass commits; clocks need synchronization. SKIP LOCKED may return no available row while due work is held, so later polling is necessary. One-order transactions add roundtrips but bound locks/rollback. Consumed/missing/mismatched data or unknown dependency failures stop the worker visibly for investigation; known contention waits for the next poll, not a hot retry. No claim of broker delivery or exactly-once external effects. Separate hosts are tested in one test process; OS kill/network loss/uncertain commit, real elapsed lock-timeout/deadlock injection, payment races, readiness/lag monitoring, least-privilege roles and deployment remain unverified/later scope.
+
+Three short interview questions (understand these before payment work):
+
+1. Why SKIP LOCKED instead of a process lock? PostgreSQL coordinates API/independent workers and lets peers skip owned orders; local locks cannot coordinate processes.
+2. Why order-before-inventory and one transaction per order? Matching cancellation/payment lock order avoids cycles, while per-order commit limits backlog lock duration and rollback scope.
+3. What happens if the worker stops after SQL release but before outbox commit? The transaction rolls back; a later pass retries durable PendingPayment data. A committed Expired order is ineligible, and unique effects/terminal guards protect repeated processing.
+
+Suggested commit title (adjusted to the explicitly requested partial milestone): `feat: add bounded PostgreSQL order expiry worker`.

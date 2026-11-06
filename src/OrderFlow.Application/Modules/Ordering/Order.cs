@@ -64,10 +64,16 @@ public sealed class Order
             OrderTransitions.FulfillmentReason(reason));
     }
 
-    private OrderStatusHistory ChangeStatus(OrderStatus target, OrderActorKind actorKind, Guid actorId,
+    public OrderStatusHistory? Expire(DateTimeOffset now) =>
+        OrderTransitions.CanExpire(Status, ExpiresAt, now)
+            ? ChangeStatus(OrderStatus.Expired, OrderActorKind.System, null, now, "Payment deadline elapsed")
+            : null;
+
+    private OrderStatusHistory ChangeStatus(OrderStatus target, OrderActorKind actorKind, Guid? actorId,
         DateTimeOffset now, string reason)
     {
-        if (actorId == Guid.Empty) throw new ApplicationFailureException(ApplicationError.Unauthenticated);
+        if (actorId == Guid.Empty || (actorId is null) != (actorKind == OrderActorKind.System))
+            throw new ApplicationFailureException(ApplicationError.Unauthenticated);
         if (Version == int.MaxValue) throw new ApplicationFailureException(ApplicationError.StateConflict);
         var time = BusinessTime.ToUtcMicroseconds(now);
         if (time < CreatedAt) throw new InvalidOperationException("A status change cannot precede order creation.");
@@ -106,7 +112,7 @@ public sealed class OrderItem
     }
 }
 
-public enum OrderActorKind { Customer, Admin }
+public enum OrderActorKind { Customer, Admin, System }
 
 public sealed class OrderStatusHistory
 {
@@ -116,7 +122,7 @@ public sealed class OrderStatusHistory
     public OrderStatus Status { get; private set; }
     public OrderStatus? FromStatus { get; private set; }
     public OrderActorKind ActorKind { get; private set; }
-    public Guid ActorUserId { get; private set; }
+    public Guid? ActorUserId { get; private set; }
     public string Reason { get; private set; } = "";
     public DateTimeOffset OccurredAt { get; private set; }
 
@@ -127,7 +133,7 @@ public sealed class OrderStatusHistory
     };
 
     internal static OrderStatusHistory Changed(Order order, OrderStatus prior, OrderActorKind actorKind,
-        Guid actorId, DateTimeOffset now, string reason) => new()
+        Guid? actorId, DateTimeOffset now, string reason) => new()
     {
         OrderId = order.Id, Version = order.Version, FromStatus = prior, Status = order.Status,
         ActorKind = actorKind, ActorUserId = actorId, OccurredAt = now, Reason = reason
