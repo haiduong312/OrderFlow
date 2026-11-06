@@ -19,6 +19,8 @@ public class Program
         builder.Services.AddCatalog();
         builder.Services.AddInventory();
         builder.Services.AddScoped<CheckoutService>();
+        builder.Services.AddScoped<OrderReadService>();
+        builder.Services.AddScoped<OrderLifecycleService>();
         var app = builder.Build();
         // Validate final configuration before accepting any requests, including in test hosts.
         _ = app.Services.GetRequiredService<BrowserAuthSettings>();

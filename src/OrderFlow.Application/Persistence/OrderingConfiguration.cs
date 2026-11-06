@@ -27,6 +27,8 @@ public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasOne<IdempotencyRecord>().WithOne().HasForeignKey<Order>(order => order.CheckoutRequestId).OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(order => order.Items).WithOne().HasForeignKey(item => item.OrderId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(order => new { order.UserId, order.CreatedAt, order.Id }).IsDescending(false, true, true);
+        builder.HasIndex(order => new { order.CreatedAt, order.Id }).IsDescending(true, true);
+        builder.HasIndex(order => new { order.Status, order.CreatedAt, order.Id }).IsDescending(false, true, true);
         builder.HasIndex(order => new { order.ExpiresAt, order.Id }).HasFilter("\"Status\" = 'PendingPayment'");
         foreach (var name in new[] { nameof(Order.UserId), nameof(Order.CheckoutRequestId), nameof(Order.Currency), nameof(Order.Total), nameof(Order.CreatedAt), nameof(Order.ExpiresAt) })
             builder.Property(name).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
@@ -51,16 +53,19 @@ public sealed class OrderItemConfiguration : IEntityTypeConfiguration<OrderItem>
     }
 }
 
-public sealed class OrderHistoryConfiguration : IEntityTypeConfiguration<OrderHistory>
+public sealed class OrderStatusHistoryConfiguration : IEntityTypeConfiguration<OrderStatusHistory>
 {
-    public void Configure(EntityTypeBuilder<OrderHistory> builder)
+    public void Configure(EntityTypeBuilder<OrderStatusHistory> builder)
     {
-        builder.ToTable("OrderHistory", "ordering", table =>
+        builder.ToTable("OrderStatusHistory", "ordering", table =>
         {
-            table.HasCheckConstraint("CK_OrderHistory_Metadata", "\"Version\" > 0 AND isfinite(\"OccurredAt\") AND length(btrim(\"Reason\")) > 0 AND \"Status\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired')");
+            table.HasCheckConstraint("CK_OrderStatusHistory_Metadata", "\"Version\" > 0 AND isfinite(\"OccurredAt\") AND length(btrim(\"Reason\")) > 0 AND \"Status\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired')");
+            table.HasCheckConstraint("CK_OrderStatusHistory_Actor", "\"ActorKind\" IN ('Customer','Admin') AND (\"FromStatus\" IS NULL OR \"FromStatus\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired'))");
         });
         builder.HasKey(history => new { history.OrderId, history.Version });
         builder.Property(history => history.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(history => history.FromStatus).HasConversion<string>().HasMaxLength(32);
+        builder.Property(history => history.ActorKind).HasConversion<string>().HasMaxLength(16).IsRequired();
         builder.Property(history => history.Reason).HasMaxLength(500).IsRequired();
         builder.HasOne<Order>().WithMany().HasForeignKey(history => history.OrderId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(history => history.ActorUserId).OnDelete(DeleteBehavior.Restrict);
@@ -77,11 +82,13 @@ public sealed class InventoryReservationConfiguration : IEntityTypeConfiguration
             table.HasCheckConstraint("CK_Reservations_Quantity", "\"Quantity\" BETWEEN 1 AND 1000");
             table.HasCheckConstraint("CK_Reservations_State", "\"Status\" IN ('Active','Consumed','Released')");
             table.HasCheckConstraint("CK_Reservations_Deadline", "isfinite(\"CreatedAt\") AND isfinite(\"ExpiresAt\") AND \"ExpiresAt\" = \"CreatedAt\" + interval '15 minutes'");
+            table.HasCheckConstraint("CK_Reservations_Release", "(\"Status\" = 'Released' AND \"ReleasedAt\" IS NOT NULL AND isfinite(\"ReleasedAt\") AND \"ReleasedAt\" >= \"CreatedAt\" AND \"ReleaseReason\" IS NOT NULL AND \"ReleaseReason\" IN ('Cancelled','Expired')) OR (\"Status\" <> 'Released' AND \"ReleasedAt\" IS NULL AND \"ReleaseReason\" IS NULL)");
         });
         builder.HasKey(reservation => reservation.Id);
         builder.Property(reservation => reservation.Id).ValueGeneratedNever();
         builder.HasIndex(reservation => new { reservation.OrderId, reservation.ProductId }).IsUnique();
         builder.Property(reservation => reservation.Status).HasConversion<string>().HasMaxLength(16).IsRequired().IsConcurrencyToken();
+        builder.Property(reservation => reservation.ReleaseReason).HasConversion<string>().HasMaxLength(16);
         builder.HasOne<OrderItem>().WithOne().HasForeignKey<InventoryReservation>(reservation => new { reservation.OrderId, reservation.ProductId })
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<InventoryBalance>().WithMany().HasForeignKey(reservation => reservation.ProductId).OnDelete(DeleteBehavior.Restrict);

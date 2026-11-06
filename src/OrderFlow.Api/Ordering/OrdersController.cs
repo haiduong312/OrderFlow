@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using OrderFlow.Api.Auth.Authorization;
 using OrderFlow.Api.Http;
 using OrderFlow.Application.Common.Errors;
@@ -15,7 +16,7 @@ namespace OrderFlow.Api.Ordering;
 [ProducesResponseType<ApiProblemDetails>(404, "application/problem+json")]
 [ProducesResponseType<ApiProblemDetails>(409, "application/problem+json")]
 [ProducesResponseType<ApiProblemDetails>(503, "application/problem+json")]
-public sealed class OrdersController(CheckoutService checkout) : ControllerBase
+public sealed class OrdersController(CheckoutService checkout, OrderReadService reads, OrderLifecycleService lifecycle) : ControllerBase
 {
     [HttpPost, ProducesResponseType<OrderResponse>(201)]
     public async Task<IActionResult> Create(CreateOrderRequest request, CancellationToken cancellationToken)
@@ -30,10 +31,25 @@ public sealed class OrdersController(CheckoutService checkout) : ControllerBase
         return File(response.Body, response.ContentType); // Write the stored bytes, including on the first response.
     }
 
-    [HttpGet("{id:guid}"), ProducesResponseType<OrderResponse>(200)]
-    public async Task<OrderResponse> Get(Guid id, CancellationToken cancellationToken)
+    [HttpGet, ProducesResponseType<OrderPage>(200)]
+    public Task<OrderPage> List([FromQuery] CustomerOrderQuery query, CancellationToken cancellationToken)
     {
         Response.Headers.CacheControl = "no-store";
-        return await checkout.GetAsync(id, cancellationToken);
+        return reads.CustomerListAsync(query, cancellationToken);
+    }
+
+    [HttpGet("{id:guid}"), ProducesResponseType<OrderDetailResponse>(200)]
+    public Task<OrderDetailResponse> Get(Guid id, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        return reads.CustomerDetailAsync(id, cancellationToken);
+    }
+
+    [HttpPost("{id:guid}/cancel"), ProducesResponseType<OrderDetailResponse>(200)]
+    public Task<OrderDetailResponse> Cancel(Guid id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] CancelOrderRequest? request, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        return lifecycle.CancelAsync(id, cancellationToken);
     }
 }

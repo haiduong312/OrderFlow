@@ -1,8 +1,10 @@
 using OrderFlow.Application.Common.Time;
+using OrderFlow.Application.Common.Errors;
 
 namespace OrderFlow.Application.Modules.Inventory;
 
 public enum ReservationStatus { Active, Consumed, Released }
+public enum ReservationReleaseReason { Cancelled, Expired }
 
 public sealed class InventoryReservation
 {
@@ -14,6 +16,21 @@ public sealed class InventoryReservation
     public ReservationStatus Status { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset ExpiresAt { get; private set; }
+    public DateTimeOffset? ReleasedAt { get; private set; }
+    public ReservationReleaseReason? ReleaseReason { get; private set; }
+
+    internal bool Release(ReservationReleaseReason reason, DateTimeOffset now)
+    {
+        if (Status == ReservationStatus.Released) return false;
+        if (Status != ReservationStatus.Active) throw new ApplicationFailureException(ApplicationError.StateConflict);
+        if (!Enum.IsDefined(reason)) throw new ArgumentOutOfRangeException(nameof(reason));
+        var time = BusinessTime.ToUtcMicroseconds(now);
+        if (time < CreatedAt) throw new InvalidOperationException("A release cannot precede reservation creation.");
+        Status = ReservationStatus.Released;
+        ReleasedAt = time;
+        ReleaseReason = reason;
+        return true;
+    }
 
     public static InventoryReservation Create(Guid orderId, Guid productId, int quantity, DateTimeOffset now)
     {

@@ -84,3 +84,7 @@ Run the normal API and request /_tests/resource-authorization/customer/{a-genera
 ## Actual Order detail integration (12)
 
 POST /api/orders and GET /api/orders/{id} now require the existing CustomerOnly policy. The detail query constrains both order ID and authenticated UserId in PostgreSQL; other-owner/missing returns the same 404, and Admin-only users remain 403 on this Customer path. Checkout and successful replay require the normal antiforgery cookie/token pair. Owner/user/role fields are never accepted in the body. Real PostgreSQL HTTP tests cover these paths; representative-resource probes remain useful policy contract tests. Order listing/cancellation/Admin inspection remain later features. See [checkout guide](checkout.md).
+
+## Order management integration (13)
+
+Customer list/count/detail/cancel enforce actual UserId predicates; cancellation puts the owner predicate in SELECT FOR UPDATE before any inventory access. Dual-role users cannot cancel others through Customer paths. AdminOnly protects all-order list/detail and versioned fulfillment, without a Customer ownership shortcut or paid-cancellation permission. Global CSRF covers cancellation/transitions, including repeated cancellation; actor/owner fields are server-derived. Tests use real Identity cookies and PostgreSQL, including 404 non-owner/missing, 401/403/CSRF, list scoping before pagination and concurrent transitions. See [orders](orders.md).

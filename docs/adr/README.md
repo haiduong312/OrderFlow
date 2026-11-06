@@ -19,5 +19,6 @@ Records below are accepted design decisions; each record supplies its decision d
 | [ADR-013](0013-inventory-ledger-and-stock-commands.md) | Inventory balances/initialization, append-only audit, ordered row locks and stock operation replay |
 | [ADR-014](0014-integration-test-harness.md) | Per-case migrated PostgreSQL/Testcontainers lifecycle, real HTTP security helpers and safe race boundaries |
 | [ADR-015](0015-idempotent-checkout.md) | Atomic Customer checkout, duplicate-ID rejection, exact request/response identity and immutable order/reservation snapshots |
+| [ADR-016](0016-order-management-transitions.md) | Owner-scoped order views, effective expiry, serialized cancellation/release and Admin fulfillment with preserved status history |
 
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

@@ -3,7 +3,7 @@ using OrderFlow.Application.Common.Time;
 
 namespace OrderFlow.Application.Modules.Inventory;
 
-public enum StockMovementKind { Initialization, Receipt, Adjustment, Reservation }
+public enum StockMovementKind { Initialization, Receipt, Adjustment, Reservation, Release }
 public enum StockActorKind { System, Admin, Customer }
 
 public sealed class StockMovement
@@ -11,6 +11,7 @@ public sealed class StockMovement
     public const string InitializationOperation = "InitializeInventory:v1";
     public const string StockChangeOperation = "ChangeStock:v1";
     public const string ReservationOperation = "ReserveStock:v1";
+    public const string ReleaseOperation = "ReleaseStock:v1";
     private StockMovement() { }
     public Guid Id { get; private set; }
     public Guid ProductId { get; private set; }
@@ -67,6 +68,18 @@ public sealed class StockMovement
         Reason = "Stock reserved for checkout", OnHandDelta = 0, ReservedDelta = reservation.Quantity,
         OnHandBefore = onHand, OnHandAfter = onHand, ReservedBefore = reserved,
         ReservedAfter = reserved + reservation.Quantity, Revision = revision, OccurredAt = reservation.CreatedAt
+    };
+
+    internal static StockMovement Release(InventoryReservation reservation, Guid actorId,
+        int onHand, int reserved, long revision) => new()
+    {
+        Id = Guid.NewGuid(), ProductId = reservation.ProductId, Operation = ReleaseOperation,
+        OperationId = reservation.Id, OrderId = reservation.OrderId, ReservationId = reservation.Id,
+        Kind = StockMovementKind.Release, ActorKind = StockActorKind.Customer, ActorUserId = actorId,
+        Reason = reservation.ReleaseReason == ReservationReleaseReason.Expired ? "Reservation released: Expired" : "Reservation released: Cancelled",
+        OnHandDelta = 0, ReservedDelta = -reservation.Quantity, OnHandBefore = onHand, OnHandAfter = onHand,
+        ReservedBefore = reserved, ReservedAfter = reserved - reservation.Quantity, Revision = revision,
+        OccurredAt = reservation.ReleasedAt!.Value
     };
 
     private static ApplicationFailureException Invalid(string field, string message) =>

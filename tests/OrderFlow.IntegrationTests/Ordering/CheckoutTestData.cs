@@ -64,7 +64,7 @@ internal static class CheckoutTestData
     {
         await using var read = database.CreateContext();
         Assert.Equal(orders, await read.Orders.CountAsync());
-        Assert.Equal(orders, await read.OrderHistory.CountAsync());
+        Assert.Equal(orders, await read.OrderStatusHistory.CountAsync());
         Assert.Equal(reservations, await read.OrderItems.CountAsync());
         Assert.Equal(reservations, await read.InventoryReservations.CountAsync());
         Assert.Equal(reservations, await read.StockMovements.CountAsync(movement => movement.Kind == StockMovementKind.Reservation));

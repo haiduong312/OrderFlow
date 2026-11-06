@@ -1,4 +1,4 @@
-# PostgreSQL persistence — milestones 03/07/08/12
+# PostgreSQL persistence — milestones 03/07/08/12/13
 
 One scoped OrderFlowDbContext contains Identity and the three durable reliability stores. Milestone 07 adds Catalog Products/Categories with explicit mappings/migration. Milestone 08 adds Inventory balances/StockMovements with initialization and append-only triggers. Milestone 12 adds Orders/OrderItems/OrderHistory and Active InventoryReservations via AddCheckout. No payment entity, broker, dispatcher, lease-claim worker or automatic startup migration/seed exists. See [checkout](checkout.md) for its transaction walkthrough and schema guards. Milestone 04 uses the existing Identity storage for [browser authentication and opt-in development accounts](authentication.md); no additional migration is needed. See [ADR-009](adr/0009-postgresql-reliability-foundations.md), [architecture](architecture.md), and [implementation status](implementation-status.md).
 
@@ -145,3 +145,7 @@ Apply 20261104083112_AddInventory through the same dedicated EF command after bu
 ## Checkout migration (12)
 
 Apply **20261105070955_AddCheckout** explicitly after building. It adds the ordering tables, Active InventoryReservations, immutable snapshot/history triggers and nullable order/reservation links plus reserve-kind checks/FK in StockMovements. Existing stock/catalog/Identity/reliability rows and initialization/append-only triggers remain intact. One Order per unique checkout claim, one item/reservation per order/product and composite ledger references protect identities. See [checkout guide](checkout.md) and [ADR-015](adr/0015-idempotent-checkout.md). Tests apply all four real migrations in their owned databases; API/worker startup still never migrates. Down is destructive and cannot safely reinterpret existing reservation audit rows as old stock commands; do not run it against retained data.
+
+## Order management migration (13)
+
+Apply **20261105084550_AddOrderManagement** as the same dedicated operator step. It preserves history through ALTER TABLE OrderHistory -> OrderStatusHistory and constraint/index/trigger renames, adds actor/from-state and reservation release metadata, release-kind/state guards and list indexes. Existing checkout/history/stock data is retained; tests verify an old creation fact and append-only trigger survive upgrade. The migration is forward-only to avoid discarding release/actor audit metadata. Coordinate application/schema versions because old binaries still expect the old table name. See [orders](orders.md) and [ADR-016](adr/0016-order-management-transitions.md). All five Up migrations run in owned test databases; no application startup migration or developer-data reset is added.

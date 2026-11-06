@@ -24,7 +24,7 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
-    public DbSet<OrderHistory> OrderHistory => Set<OrderHistory>();
+    public DbSet<OrderStatusHistory> OrderStatusHistory => Set<OrderStatusHistory>();
     public DbSet<InventoryReservation> InventoryReservations => Set<InventoryReservation>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder builder)
@@ -58,7 +58,7 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
         builder.ApplyConfiguration(new StockMovementConfiguration());
         builder.ApplyConfiguration(new OrderConfiguration());
         builder.ApplyConfiguration(new OrderItemConfiguration());
-        builder.ApplyConfiguration(new OrderHistoryConfiguration());
+        builder.ApplyConfiguration(new OrderStatusHistoryConfiguration());
         builder.ApplyConfiguration(new InventoryReservationConfiguration());
     }
 }

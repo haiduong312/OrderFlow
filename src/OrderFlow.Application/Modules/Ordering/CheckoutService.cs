@@ -5,7 +5,6 @@ using Npgsql;
 using OrderFlow.Application.Common.Authorization;
 using OrderFlow.Application.Common.Errors;
 using OrderFlow.Application.Common.Time;
-using OrderFlow.Application.Messaging;
 using OrderFlow.Application.Modules.Catalog;
 using OrderFlow.Application.Modules.Inventory;
 using OrderFlow.Application.Persistence;
@@ -27,23 +26,13 @@ public sealed class CheckoutService(OrderFlowDbContext database, ICurrentUser cu
         {
             return await CreateOrReplayAsync(userId, validatedKey, normalized, cancellationToken);
         }
-        catch (Exception failure) when (!cancellationToken.IsCancellationRequested && Contention(failure) is not null)
+        catch (Exception failure) when (!cancellationToken.IsCancellationRequested && OrderDatabase.Contention(failure) is not null)
         {
-            var state = Contention(failure)!.SqlState;
+            var state = OrderDatabase.Contention(failure)!.SqlState;
             logger.LogWarning(new EventId(1201, "CheckoutContention"), "Checkout transaction failed with PostgreSQL state {SqlState}", state);
             // No implicit retry, especially around an uncertain commit. The caller keeps the same key.
             throw new ApplicationFailureException(ApplicationError.ServiceUnavailable);
         }
-    }
-
-    public async Task<OrderResponse> GetAsync(Guid id, CancellationToken cancellationToken)
-    {
-        var userId = currentUser.UserId ?? throw new ApplicationFailureException(ApplicationError.Unauthenticated);
-        // Owner constraint is part of the SQL query; another user's order is indistinguishable from missing.
-        var order = await database.Orders.AsNoTracking().Include(order => order.Items)
-            .SingleOrDefaultAsync(order => order.Id == id && order.UserId == userId, cancellationToken)
-            ?? throw new ApplicationFailureException(ApplicationError.NotFound);
-        return Response(order);
     }
 
     private async Task<CheckoutResponse> CreateOrReplayAsync(Guid userId, string key, CheckoutRequest request, CancellationToken cancellationToken)
@@ -53,7 +42,7 @@ public sealed class CheckoutService(OrderFlowDbContext database, ICurrentUser cu
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         // Explicit transaction-local budgets, restored automatically on commit/rollback.
-        await database.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '20s'", cancellationToken);
+        await OrderDatabase.SetTimeoutsAsync(database, cancellationToken);
         var claim = IdempotencyRecord.Create(userId, CheckoutRequest.Operation, key, request.CanonicalBody, BusinessTime.GetUtcNow(clock));
         database.IdempotencyRecords.Add(claim);
         try
@@ -85,7 +74,7 @@ public sealed class CheckoutService(OrderFlowDbContext database, ICurrentUser cu
             return new OrderItemSnapshot(product.Id, product.Sku, product.Name, product.Price, item.Quantity);
         }).ToArray(), now);
         database.Orders.Add(order);
-        database.OrderHistory.Add(OrderHistory.Created(order));
+        database.OrderStatusHistory.Add(OrderStatusHistory.Created(order));
         await database.SaveChangesAsync(cancellationToken);
 
         foreach (var item in order.Items)
@@ -100,18 +89,8 @@ public sealed class CheckoutService(OrderFlowDbContext database, ICurrentUser cu
             await database.SaveChangesAsync(cancellationToken);
         }
 
-        var response = Response(order);
-        database.OutboxMessages.Add(new OutboxMessage
-        {
-            EventId = Guid.NewGuid(), EventType = "ordering.order-created", SchemaVersion = 1,
-            Producer = "Ordering", AggregateType = "Order", AggregateId = order.Id, AggregateVersion = order.Version,
-            CorrelationId = order.Id, CausationId = claim.Id, OccurredAt = now, NextAttemptAt = now,
-            Payload = JsonSerializer.Serialize(new
-            {
-                orderId = order.Id, userId, response.Status, response.Version, response.Currency, response.Total,
-                createdAt = now.UtcDateTime, expiresAt = order.ExpiresAt.UtcDateTime
-            }, Json)
-        });
+        var response = OrderViews.Checkout(order);
+        database.OutboxMessages.Add(OrderEvents.Create(order, "ordering.order-created", now, claim.Id));
         var body = JsonSerializer.SerializeToUtf8Bytes(response, Json);
         var location = "/api/orders/" + order.Id.ToString("D");
         claim.Complete(201, "application/json; charset=utf-8", body, location, now);
@@ -165,17 +144,4 @@ public sealed class CheckoutService(OrderFlowDbContext database, ICurrentUser cu
         return new(prior.ResponseStatusCode.Value, prior.ResponseContentType, prior.ResponseLocation, prior.ResponseBody);
     }
 
-    private static OrderResponse Response(Order order) => new(order.Id, order.Status.ToString(), order.Version,
-        order.CreatedAt, order.ExpiresAt, order.Total.ToString(), order.Items.OrderBy(item => item.ProductId.ToString("N"), StringComparer.Ordinal)
-            .Select(item => new OrderItemResponse(item.ProductId, item.Sku, item.Name, item.UnitPrice.ToString(), item.Quantity, item.LineTotal.ToString())).ToArray());
-
-    private static PostgresException? Contention(Exception failure)
-    {
-        // Npgsql's non-retrying execution strategy wraps classified transient SaveChanges
-        // failures in InvalidOperationException. Inspect that known wrapper, not its message.
-        if (failure is InvalidOperationException { InnerException: { } inner }) failure = inner;
-        var postgres = failure as PostgresException ?? (failure as DbUpdateException)?.InnerException as PostgresException;
-        return postgres?.SqlState is PostgresErrorCodes.LockNotAvailable or PostgresErrorCodes.DeadlockDetected
-            or PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.QueryCanceled ? postgres : null;
-    }
 }

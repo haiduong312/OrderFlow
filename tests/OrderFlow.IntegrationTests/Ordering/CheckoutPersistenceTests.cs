@@ -27,9 +27,9 @@ public sealed class CheckoutPersistenceTests(PostgresServer server) : PostgresTe
             "UPDATE ordering.\"OrderItems\" SET \"Name\" = 'Rewritten'",
             "DELETE FROM ordering.\"OrderItems\"",
             "TRUNCATE ordering.\"OrderItems\" CASCADE",
-            "UPDATE ordering.\"OrderHistory\" SET \"Reason\" = 'Rewritten'",
-            "DELETE FROM ordering.\"OrderHistory\"",
-            "TRUNCATE ordering.\"OrderHistory\"",
+            "UPDATE ordering.\"OrderStatusHistory\" SET \"Reason\" = 'Rewritten'",
+            "DELETE FROM ordering.\"OrderStatusHistory\"",
+            "TRUNCATE ordering.\"OrderStatusHistory\"",
             "UPDATE ordering.\"Orders\" SET \"Total\" = 1.00",
             "UPDATE ordering.\"Orders\" SET \"ExpiresAt\" = \"ExpiresAt\" + interval '1 minute'",
             "UPDATE inventory.\"InventoryReservations\" SET \"Quantity\" = 2"

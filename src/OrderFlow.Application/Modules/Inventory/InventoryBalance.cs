@@ -27,6 +27,21 @@ public sealed class InventoryBalance
         return movement;
     }
 
+    public StockMovement? Release(InventoryReservation reservation, ReservationReleaseReason reason, Guid actorId, DateTimeOffset now)
+    {
+        if (reservation.ProductId != ProductId || actorId == Guid.Empty)
+            throw new ArgumentException("A reservation for this product and a customer actor are required.");
+        if (reservation.Status == ReservationStatus.Released) return null;
+        if (reservation.Status != ReservationStatus.Active) throw new ApplicationFailureException(ApplicationError.StateConflict);
+        if (Reserved < reservation.Quantity) throw new InvalidOperationException("Reserved stock does not cover its active reservation.");
+        if (Revision == long.MaxValue) throw new ApplicationFailureException(ApplicationError.StockLimitExceeded);
+        reservation.Release(reason, now);
+        var movement = StockMovement.Release(reservation, actorId, OnHand, Reserved, Revision + 1);
+        Reserved -= reservation.Quantity;
+        Revision++;
+        return movement;
+    }
+
     public StockMovement Change(Guid operationId, StockMovementKind kind, int delta, string? reason, Guid actorId, DateTimeOffset now)
     {
         StockMovement.ValidateCommand(operationId, kind, delta, actorId);

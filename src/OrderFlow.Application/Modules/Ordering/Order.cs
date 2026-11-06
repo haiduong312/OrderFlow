@@ -1,5 +1,6 @@
 using OrderFlow.Application.Common.Money;
 using OrderFlow.Application.Common.Time;
+using OrderFlow.Application.Common.Errors;
 
 namespace OrderFlow.Application.Modules.Ordering;
 
@@ -43,6 +44,38 @@ public sealed class Order
         order.Total = UsdMoney.FromDecimal(total);
         return order;
     }
+
+    public OrderStatusHistory? Cancel(Guid actorId, DateTimeOffset now)
+    {
+        if (actorId == Guid.Empty) throw new ApplicationFailureException(ApplicationError.Unauthenticated);
+        if (actorId != UserId) throw new ApplicationFailureException(ApplicationError.NotFound);
+        var target = OrderTransitions.CancellationTarget(Status, ExpiresAt, now);
+        if (target is null) return null; // Already Cancelled: no new version/history/effect.
+        return ChangeStatus(target.Value, OrderActorKind.Customer, actorId, now,
+            target == OrderStatus.Expired ? "Deadline elapsed during customer cancellation" : "Customer cancelled the pending order");
+    }
+
+    public OrderStatusHistory AdvanceFulfillment(OrderStatus target, int expectedVersion, Guid actorId,
+        DateTimeOffset now, string? reason)
+    {
+        if (expectedVersion != Version) throw new ApplicationFailureException(ApplicationError.VersionConflict);
+        if (!OrderTransitions.CanAdvanceFulfillment(Status, target)) throw new ApplicationFailureException(ApplicationError.StateConflict);
+        return ChangeStatus(target, OrderActorKind.Admin, actorId, now,
+            OrderTransitions.FulfillmentReason(reason));
+    }
+
+    private OrderStatusHistory ChangeStatus(OrderStatus target, OrderActorKind actorKind, Guid actorId,
+        DateTimeOffset now, string reason)
+    {
+        if (actorId == Guid.Empty) throw new ApplicationFailureException(ApplicationError.Unauthenticated);
+        if (Version == int.MaxValue) throw new ApplicationFailureException(ApplicationError.StateConflict);
+        var time = BusinessTime.ToUtcMicroseconds(now);
+        if (time < CreatedAt) throw new InvalidOperationException("A status change cannot precede order creation.");
+        var prior = Status;
+        Status = target;
+        Version++;
+        return OrderStatusHistory.Changed(this, prior, actorKind, actorId, time, reason);
+    }
 }
 
 public sealed class OrderItem
@@ -73,19 +106,30 @@ public sealed class OrderItem
     }
 }
 
-public sealed class OrderHistory
+public enum OrderActorKind { Customer, Admin }
+
+public sealed class OrderStatusHistory
 {
-    private OrderHistory() { }
+    private OrderStatusHistory() { }
     public Guid OrderId { get; private set; }
     public int Version { get; private set; }
     public OrderStatus Status { get; private set; }
+    public OrderStatus? FromStatus { get; private set; }
+    public OrderActorKind ActorKind { get; private set; }
     public Guid ActorUserId { get; private set; }
     public string Reason { get; private set; } = "";
     public DateTimeOffset OccurredAt { get; private set; }
 
-    public static OrderHistory Created(Order order) => new()
+    public static OrderStatusHistory Created(Order order) => new()
     {
         OrderId = order.Id, Version = order.Version, Status = order.Status, ActorUserId = order.UserId,
-        Reason = "Order created and stock reserved", OccurredAt = order.CreatedAt
+        ActorKind = OrderActorKind.Customer, Reason = "Order created and stock reserved", OccurredAt = order.CreatedAt
+    };
+
+    internal static OrderStatusHistory Changed(Order order, OrderStatus prior, OrderActorKind actorKind,
+        Guid actorId, DateTimeOffset now, string reason) => new()
+    {
+        OrderId = order.Id, Version = order.Version, FromStatus = prior, Status = order.Status,
+        ActorKind = actorKind, ActorUserId = actorId, OccurredAt = now, Reason = reason
     };
 }

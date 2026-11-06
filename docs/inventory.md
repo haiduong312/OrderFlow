@@ -80,3 +80,7 @@ Use the matching --artifacts-path across restore/build/test if building outside 
 ## Checkout reservation effects (12)
 
 Customer [checkout](checkout.md) now creates Active InventoryReservations and Reservation/Customer ledger facts under the same ordered balance locks as stock changes. It increments Reserved/revision only, with ReserveStock:v1 keyed by the reservation UUID and order/reservation references exposed in Admin stock history. Receipt/Adjustment behavior and replay remain unchanged. Existing CHECKs still forbid Reserved>OnHand, so adjustments cannot remove reserved units. Consumption/release/cancellation/expiry remain later work; stale reservations conservatively reduce Available until those workflows exist. See [ADR-015](adr/0015-idempotent-checkout.md).
+
+## Reservation release (13)
+
+Customer [cancellation/expiry](orders.md) now takes the order lock first, then sorted balance/reservation locks. It changes Active -> Released, records ReleasedAt plus Cancelled/Expired reason, decrements Reserved without changing OnHand and appends a Customer Release movement under ReleaseStock:v1/reservation UUID. PostgreSQL blocks terminal reservation reactivation/metadata rewrites. State/history/release/outbox share one transaction; repeated cancellation has no second inventory effect. Admin fulfillment changes no stock. Consumption/payment and automatic expiry workers remain unimplemented.
