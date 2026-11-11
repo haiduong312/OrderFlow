@@ -533,6 +533,9 @@ namespace OrderFlow.Application.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -570,6 +573,8 @@ namespace OrderFlow.Application.Persistence.Migrations
 
                     b.ToTable("InventoryReservations", "inventory", t =>
                         {
+                            t.HasCheckConstraint("CK_Reservations_Consumption", "(\"Status\" = 'Consumed' AND \"ConsumedAt\" IS NOT NULL AND isfinite(\"ConsumedAt\") AND \"ConsumedAt\" >= \"CreatedAt\" AND \"ConsumedAt\" < \"ExpiresAt\") OR (\"Status\" <> 'Consumed' AND \"ConsumedAt\" IS NULL)");
+
                             t.HasCheckConstraint("CK_Reservations_Deadline", "isfinite(\"CreatedAt\") AND isfinite(\"ExpiresAt\") AND \"ExpiresAt\" = \"CreatedAt\" + interval '15 minutes'");
 
                             t.HasCheckConstraint("CK_Reservations_Quantity", "\"Quantity\" BETWEEN 1 AND 1000");
@@ -662,7 +667,7 @@ namespace OrderFlow.Application.Persistence.Migrations
 
                     b.ToTable("StockMovements", "inventory", t =>
                         {
-                            t.HasCheckConstraint("CK_StockMovements_Kind", "(\"Kind\" = 'Initialization' AND \"Operation\" = 'InitializeInventory:v1'\n AND \"OperationId\" = \"ProductId\" AND \"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL\n AND \"Revision\" = 0 AND \"OnHandBefore\" = 0 AND \"OnHandAfter\" = 0\n AND \"ReservedBefore\" = 0 AND \"ReservedAfter\" = 0 AND \"OnHandDelta\" = 0 AND \"ReservedDelta\" = 0\n AND \"OrderId\" IS NULL AND \"ReservationId\" IS NULL)\nOR\n(\"Kind\" IN ('Receipt','Adjustment') AND \"Operation\" = 'ChangeStock:v1'\n AND \"ActorKind\" = 'Admin' AND \"ActorUserId\" IS NOT NULL AND \"Revision\" > 0\n AND \"ReservedDelta\" = 0 AND \"OnHandDelta\" <> 0\n AND (\"Kind\" <> 'Receipt' OR \"OnHandDelta\" > 0)\n AND \"OrderId\" IS NULL AND \"ReservationId\" IS NULL)\nOR\n(\"Kind\" = 'Reservation' AND \"Operation\" = 'ReserveStock:v1'\n AND \"ActorKind\" = 'Customer' AND \"ActorUserId\" IS NOT NULL AND \"Revision\" > 0\n AND \"OrderId\" IS NOT NULL AND \"ReservationId\" IS NOT NULL AND \"OperationId\" = \"ReservationId\"\n AND \"OnHandDelta\" = 0 AND \"ReservedDelta\" BETWEEN 1 AND 1000)\nOR\n(\"Kind\" = 'Release' AND \"Operation\" = 'ReleaseStock:v1'\n AND ((\"ActorKind\" = 'Customer' AND \"ActorUserId\" IS NOT NULL)\n      OR (\"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL AND \"Reason\" = 'Reservation released: Expired')) AND \"Revision\" > 0\n AND \"OrderId\" IS NOT NULL AND \"ReservationId\" IS NOT NULL AND \"OperationId\" = \"ReservationId\"\n AND \"OnHandDelta\" = 0 AND \"ReservedDelta\" BETWEEN -1000 AND -1)");
+                            t.HasCheckConstraint("CK_StockMovements_Kind", "(\"Kind\" = 'Initialization' AND \"Operation\" = 'InitializeInventory:v1'\n AND \"OperationId\" = \"ProductId\" AND \"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL\n AND \"Revision\" = 0 AND \"OnHandBefore\" = 0 AND \"OnHandAfter\" = 0\n AND \"ReservedBefore\" = 0 AND \"ReservedAfter\" = 0 AND \"OnHandDelta\" = 0 AND \"ReservedDelta\" = 0\n AND \"OrderId\" IS NULL AND \"ReservationId\" IS NULL)\nOR\n(\"Kind\" IN ('Receipt','Adjustment') AND \"Operation\" = 'ChangeStock:v1'\n AND \"ActorKind\" = 'Admin' AND \"ActorUserId\" IS NOT NULL AND \"Revision\" > 0\n AND \"ReservedDelta\" = 0 AND \"OnHandDelta\" <> 0\n AND (\"Kind\" <> 'Receipt' OR \"OnHandDelta\" > 0)\n AND \"OrderId\" IS NULL AND \"ReservationId\" IS NULL)\nOR\n(\"Kind\" = 'Reservation' AND \"Operation\" = 'ReserveStock:v1'\n AND \"ActorKind\" = 'Customer' AND \"ActorUserId\" IS NOT NULL AND \"Revision\" > 0\n AND \"OrderId\" IS NOT NULL AND \"ReservationId\" IS NOT NULL AND \"OperationId\" = \"ReservationId\"\n AND \"OnHandDelta\" = 0 AND \"ReservedDelta\" BETWEEN 1 AND 1000)\nOR\n(\"Kind\" = 'Release' AND \"Operation\" = 'ReleaseStock:v1'\n AND ((\"ActorKind\" = 'Customer' AND \"ActorUserId\" IS NOT NULL)\n      OR (\"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL AND \"Reason\" = 'Reservation released: Expired')) AND \"Revision\" > 0\n AND \"OrderId\" IS NOT NULL AND \"ReservationId\" IS NOT NULL AND \"OperationId\" = \"ReservationId\"\n AND \"OnHandDelta\" = 0 AND \"ReservedDelta\" BETWEEN -1000 AND -1)\nOR\n(\"Kind\" = 'Consumption' AND \"Operation\" = 'ConsumeStock:v1'\n AND \"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL AND \"Revision\" > 0\n AND \"OrderId\" IS NOT NULL AND \"ReservationId\" IS NOT NULL AND \"OperationId\" = \"ReservationId\"\n AND \"ReservedDelta\" BETWEEN -1000 AND -1 AND \"OnHandDelta\" = \"ReservedDelta\")");
 
                             t.HasCheckConstraint("CK_StockMovements_OccurredAt", "isfinite(\"OccurredAt\")");
 
@@ -819,7 +824,7 @@ namespace OrderFlow.Application.Persistence.Migrations
 
                     b.ToTable("OrderStatusHistory", "ordering", t =>
                         {
-                            t.HasCheckConstraint("CK_OrderStatusHistory_Actor", "((\"ActorKind\" IN ('Customer','Admin') AND \"ActorUserId\" IS NOT NULL) OR (\"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL AND \"FromStatus\" IS NOT NULL AND \"FromStatus\" = 'PendingPayment' AND \"Status\" = 'Expired')) AND (\"FromStatus\" IS NULL OR \"FromStatus\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired'))");
+                            t.HasCheckConstraint("CK_OrderStatusHistory_Actor", "((\"ActorKind\" IN ('Customer','Admin') AND \"ActorUserId\" IS NOT NULL) OR (\"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL AND \"FromStatus\" IS NOT NULL AND \"FromStatus\" = 'PendingPayment' AND \"Status\" IN ('Expired','Confirmed'))) AND (\"FromStatus\" IS NULL OR \"FromStatus\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired'))");
 
                             t.HasCheckConstraint("CK_OrderStatusHistory_Metadata", "\"Version\" > 0 AND isfinite(\"OccurredAt\") AND length(btrim(\"Reason\")) > 0 AND \"Status\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired')");
                         });
@@ -912,19 +917,219 @@ namespace OrderFlow.Application.Persistence.Migrations
                     b.HasIndex("Provider", "ProviderRequestKey")
                         .IsUnique();
 
+                    b.HasIndex("Provider", "ProviderTransactionId")
+                        .IsUnique()
+                        .HasFilter("\"ProviderTransactionId\" IS NOT NULL");
+
                     b.ToTable("PaymentAttempts", "payments", t =>
                         {
+                            t.HasCheckConstraint("CK_PaymentAttempts_Captured", "\"Status\" <> 'Captured' OR (\"ObservedState\" IS NOT DISTINCT FROM 'Succeeded' AND \"ProviderCaptureId\" IS NOT NULL AND \"ProviderTransactionId\" IS NOT NULL AND \"LeaseToken\" IS NULL)");
+
                             t.HasCheckConstraint("CK_PaymentAttempts_Identity", "\"Provider\" = 'Simulator' AND \"ProviderRequestKey\" = 'payment-' || replace(\"Id\"::text,'-','')");
 
                             t.HasCheckConstraint("CK_PaymentAttempts_Lease", "(\"LeaseToken\" IS NULL AND \"LeaseExpiresAt\" IS NULL) OR (\"LeaseToken\" IS NOT NULL AND \"LeaseExpiresAt\" IS NOT NULL AND isfinite(\"LeaseExpiresAt\") AND \"LeaseExpiresAt\" > \"UpdatedAt\" AND \"DeliveryCount\" > 0)");
 
                             t.HasCheckConstraint("CK_PaymentAttempts_Money", "\"Currency\" = 'USD' AND \"Amount\" > 0 AND \"Amount\" <= 9999999999999999.99");
 
-                            t.HasCheckConstraint("CK_PaymentAttempts_Observation", "(\"LastObservation\" IS NULL OR jsonb_typeof(\"LastObservation\") = 'object') AND (\"ObservedState\" IS DISTINCT FROM 'Succeeded' OR (\"Status\" = 'Pending' AND \"NeedsAttention\" AND \"ProviderTransactionId\" IS NOT NULL AND \"ProviderCaptureId\" IS NOT NULL))");
+                            t.HasCheckConstraint("CK_PaymentAttempts_Observation", "(\"LastObservation\" IS NULL OR jsonb_typeof(\"LastObservation\") = 'object') AND (\"ObservedState\" IS DISTINCT FROM 'Succeeded' OR ((\"Status\" = 'Pending' AND \"NeedsAttention\" OR \"Status\" = 'Captured') AND \"ProviderTransactionId\" IS NOT NULL AND \"ProviderCaptureId\" IS NOT NULL))");
 
-                            t.HasCheckConstraint("CK_PaymentAttempts_State", "\"Status\" IN ('Queued','Pending','Unknown','Failed') AND \"DeliveryCount\" BETWEEN 0 AND 8 AND (\"ObservedState\" IS NULL OR \"ObservedState\" IN ('Pending','Succeeded','Failed'))");
+                            t.HasCheckConstraint("CK_PaymentAttempts_State", "\"Status\" IN ('Queued','Pending','Unknown','Failed','Captured') AND \"DeliveryCount\" BETWEEN 0 AND 8 AND (\"ObservedState\" IS NULL OR \"ObservedState\" IN ('Pending','Succeeded','Failed'))");
 
                             t.HasCheckConstraint("CK_PaymentAttempts_Times", "isfinite(\"CreatedAt\") AND isfinite(\"UpdatedAt\") AND isfinite(\"NextAttemptAt\") AND \"UpdatedAt\" >= \"CreatedAt\" AND \"NextAttemptAt\" >= \"CreatedAt\"");
+                        });
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Payments.PaymentCapture", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Allocated")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .UseCollation("C");
+
+                    b.Property<string>("ProviderCaptureId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("C");
+
+                    b.Property<Guid>("ProviderEventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ProviderOccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProviderTransactionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("C");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttemptId");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentCaptures_AllocatedOrder")
+                        .HasFilter("\"Allocated\"");
+
+                    b.HasIndex("Provider", "ProviderCaptureId")
+                        .IsUnique();
+
+                    b.HasIndex("Provider", "ProviderEventId");
+
+                    b.ToTable("PaymentCaptures", "payments", t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentCaptures_Facts", "\"Provider\" = 'Simulator' AND length(\"ProviderCaptureId\") > 0 AND length(\"ProviderTransactionId\") > 0 AND \"Amount\" > 0 AND \"Currency\" = 'USD' AND isfinite(\"ProviderOccurredAt\") AND isfinite(\"RecordedAt\")");
+                        });
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Payments.PaymentEvent", b =>
+                {
+                    b.Property<string>("Provider")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .UseCollation("C");
+
+                    b.Property<Guid>("ProviderEventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("DecisionAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("PayloadHash")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("RawBody")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ReferencedOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Provider", "ProviderEventId");
+
+                    b.HasIndex("ReceivedAt", "ProviderEventId")
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.ToTable("PaymentEvents", "payments", t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentEvents_Payload", "\"Provider\" = 'Simulator' AND octet_length(\"RawBody\") BETWEEN 1 AND 65536 AND octet_length(\"PayloadHash\") = 32");
+
+                            t.HasCheckConstraint("CK_PaymentEvents_State", "(\"Status\" = 'Pending' AND \"DecisionAt\" IS NULL AND \"ErrorCode\" IS NULL) OR (\"Status\" = 'Processed' AND \"DecisionAt\" IS NOT NULL AND \"ErrorCode\" IS NULL) OR (\"Status\" = 'Quarantined' AND \"DecisionAt\" IS NOT NULL AND \"ErrorCode\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_PaymentEvents_Time", "isfinite(\"OccurredAt\") AND isfinite(\"ReceivedAt\") AND (\"DecisionAt\" IS NULL OR (isfinite(\"DecisionAt\") AND \"DecisionAt\" >= \"ReceivedAt\"))");
+                        });
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Payments.PaymentRefund", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("CaptureId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .UseCollation("C");
+
+                    b.Property<string>("ProviderCaptureId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("C");
+
+                    b.Property<string>("ProviderRefundKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .UseCollation("C");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaptureId")
+                        .IsUnique();
+
+                    b.HasIndex("ProviderRefundKey")
+                        .IsUnique();
+
+                    b.HasIndex("Provider", "ProviderCaptureId", "Purpose")
+                        .IsUnique();
+
+                    b.ToTable("Refunds", "payments", t =>
+                        {
+                            t.HasCheckConstraint("CK_Refunds_Intention", "\"Provider\" = 'Simulator' AND \"Purpose\" = 'FullCompensation' AND \"Status\" = 'RefundPending' AND \"Currency\" = 'USD' AND \"Amount\" > 0 AND isfinite(\"CreatedAt\") AND length(\"Reason\") > 0 AND \"ProviderRefundKey\" = 'refund-' || replace(\"Id\"::text,'-','')");
                         });
                 });
 
@@ -1293,6 +1498,36 @@ namespace OrderFlow.Application.Persistence.Migrations
                     b.HasOne("OrderFlow.Application.Modules.Ordering.Order", null)
                         .WithMany()
                         .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Payments.PaymentCapture", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Modules.Payments.PaymentAttempt", null)
+                        .WithMany()
+                        .HasForeignKey("AttemptId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Ordering.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Payments.PaymentEvent", null)
+                        .WithMany()
+                        .HasForeignKey("Provider", "ProviderEventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Payments.PaymentRefund", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Modules.Payments.PaymentCapture", null)
+                        .WithOne()
+                        .HasForeignKey("OrderFlow.Application.Modules.Payments.PaymentRefund", "CaptureId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

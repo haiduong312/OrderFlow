@@ -17,7 +17,18 @@ public sealed class InventoryReservation
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset ExpiresAt { get; private set; }
     public DateTimeOffset? ReleasedAt { get; private set; }
+    public DateTimeOffset? ConsumedAt { get; private set; }
     public ReservationReleaseReason? ReleaseReason { get; private set; }
+
+    internal void Consume(DateTimeOffset now)
+    {
+        if (Status != ReservationStatus.Active) throw new ApplicationFailureException(ApplicationError.StateConflict);
+        var time = BusinessTime.ToUtcMicroseconds(now);
+        if (time < CreatedAt || time >= ExpiresAt)
+            throw new InvalidOperationException("Consumption requires an on-time locked eligibility decision.");
+        Status = ReservationStatus.Consumed;
+        ConsumedAt = time;
+    }
 
     internal bool Release(ReservationReleaseReason reason, DateTimeOffset now)
     {

@@ -20,7 +20,7 @@ namespace OrderFlow.IntegrationTests.Auth;
 
 public sealed class AuthApiFactory(PostgresDatabase database, string environment = "Production", bool allowHttp = false,
     RegistrationGate? registrationGate = null, LoginGate? loginGate = null,
-    DbCommandInterceptor? catalogInterceptor = null, TimeProvider? clock = null) : WebApplicationFactory<Api.Program>
+    DbCommandInterceptor? catalogInterceptor = null, TimeProvider? clock = null, string? callbackSecret = null) : WebApplicationFactory<Api.Program>
 {
     public CapturingLoggerProvider Logs { get; } = new();
 
@@ -31,7 +31,10 @@ public sealed class AuthApiFactory(PostgresDatabase database, string environment
             new Dictionary<string, string?>
             {
                 ["ConnectionStrings:OrderFlow"] = database.ConnectionString,
-                ["Authentication:AllowInsecureHttp"] = allowHttp.ToString()
+                ["Authentication:AllowInsecureHttp"] = allowHttp.ToString(),
+                ["PaymentCallbacks:Enabled"] = (callbackSecret is not null).ToString(),
+                ["PaymentCallbacks:KeyId"] = "test-v1",
+                ["PaymentCallbacks:Secret"] = callbackSecret
             }));
         builder.ConfigureLogging(logging => logging.AddProvider(Logs));
         builder.ConfigureTestServices(services =>

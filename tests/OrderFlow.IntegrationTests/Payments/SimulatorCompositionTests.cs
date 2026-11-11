@@ -3,12 +3,23 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OrderFlow.Simulator;
 using OrderFlow.Worker;
+using OrderFlow.Api.Payments;
 using Xunit;
 
 namespace OrderFlow.IntegrationTests.Payments;
 
 public sealed class SimulatorCompositionTests
 {
+    [Fact]
+    public void Callback_settings_require_a_private_secret_only_when_enabled_and_settlement_is_opt_in_seed_suppressed()
+    {
+        Assert.Throws<InvalidOperationException>(() => PaymentCallbackSettings.Read(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["PaymentCallbacks:Enabled"] = "true" }).Build()));
+        using var enabled = WorkerHost.Build(["--OrderExpiry:Enabled", "false", "--PaymentSettlement:Enabled", "true"]);
+        Assert.Single(enabled.Services.GetServices<IHostedService>().OfType<PaymentSettlementWorker>());
+        using var seed = WorkerHost.Build(["--OrderExpiry:Enabled", "false", "--PaymentSettlement:Enabled", "true"], runBackgroundJobs: false);
+        Assert.Empty(seed.Services.GetServices<IHostedService>());
+    }
     [Theory]
     [InlineData("Production", true)]
     [InlineData("Staging", true)]

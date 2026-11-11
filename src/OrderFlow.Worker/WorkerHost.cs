@@ -18,6 +18,9 @@ public static class WorkerHost
             .ValidateOnStart();
         builder.Services.AddScoped<OrderExpiryProcessor>();
         builder.Services.AddSingleton<OrderExpiryIteration>();
+        builder.Services.AddScoped<PaymentSettlementProcessor>();
+        if (runBackgroundJobs && builder.Configuration.GetValue("PaymentSettlement:Enabled", false))
+            builder.Services.AddHostedService<PaymentSettlementWorker>();
         if (runBackgroundJobs && builder.Configuration.GetValue("OrderExpiry:Enabled", true))
             builder.Services.AddHostedService<OrderExpiryWorker>();
         if (builder.Configuration.GetValue("PaymentProcessing:Enabled", false))

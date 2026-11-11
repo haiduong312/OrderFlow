@@ -60,7 +60,7 @@ public sealed class OrderStatusHistoryConfiguration : IEntityTypeConfiguration<O
         builder.ToTable("OrderStatusHistory", "ordering", table =>
         {
             table.HasCheckConstraint("CK_OrderStatusHistory_Metadata", "\"Version\" > 0 AND isfinite(\"OccurredAt\") AND length(btrim(\"Reason\")) > 0 AND \"Status\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired')");
-            table.HasCheckConstraint("CK_OrderStatusHistory_Actor", "((\"ActorKind\" IN ('Customer','Admin') AND \"ActorUserId\" IS NOT NULL) OR (\"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL AND \"FromStatus\" IS NOT NULL AND \"FromStatus\" = 'PendingPayment' AND \"Status\" = 'Expired')) AND (\"FromStatus\" IS NULL OR \"FromStatus\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired'))");
+            table.HasCheckConstraint("CK_OrderStatusHistory_Actor", "((\"ActorKind\" IN ('Customer','Admin') AND \"ActorUserId\" IS NOT NULL) OR (\"ActorKind\" = 'System' AND \"ActorUserId\" IS NULL AND \"FromStatus\" IS NOT NULL AND \"FromStatus\" = 'PendingPayment' AND \"Status\" IN ('Expired','Confirmed'))) AND (\"FromStatus\" IS NULL OR \"FromStatus\" IN ('PendingPayment','Confirmed','Processing','Shipped','Completed','Cancelled','Expired'))");
         });
         builder.HasKey(history => new { history.OrderId, history.Version });
         builder.Property(history => history.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
@@ -82,6 +82,7 @@ public sealed class InventoryReservationConfiguration : IEntityTypeConfiguration
             table.HasCheckConstraint("CK_Reservations_Quantity", "\"Quantity\" BETWEEN 1 AND 1000");
             table.HasCheckConstraint("CK_Reservations_State", "\"Status\" IN ('Active','Consumed','Released')");
             table.HasCheckConstraint("CK_Reservations_Deadline", "isfinite(\"CreatedAt\") AND isfinite(\"ExpiresAt\") AND \"ExpiresAt\" = \"CreatedAt\" + interval '15 minutes'");
+            table.HasCheckConstraint("CK_Reservations_Consumption", "(\"Status\" = 'Consumed' AND \"ConsumedAt\" IS NOT NULL AND isfinite(\"ConsumedAt\") AND \"ConsumedAt\" >= \"CreatedAt\" AND \"ConsumedAt\" < \"ExpiresAt\") OR (\"Status\" <> 'Consumed' AND \"ConsumedAt\" IS NULL)");
             table.HasCheckConstraint("CK_Reservations_Release", "(\"Status\" = 'Released' AND \"ReleasedAt\" IS NOT NULL AND isfinite(\"ReleasedAt\") AND \"ReleasedAt\" >= \"CreatedAt\" AND \"ReleaseReason\" IS NOT NULL AND \"ReleaseReason\" IN ('Cancelled','Expired')) OR (\"Status\" <> 'Released' AND \"ReleasedAt\" IS NULL AND \"ReleaseReason\" IS NULL)");
         });
         builder.HasKey(reservation => reservation.Id);

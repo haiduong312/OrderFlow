@@ -69,6 +69,13 @@ public sealed class Order
             ? ChangeStatus(OrderStatus.Expired, OrderActorKind.System, null, now, "Payment deadline elapsed")
             : null;
 
+    public OrderStatusHistory ConfirmPayment(DateTimeOffset decisionAt)
+    {
+        if (Status != OrderStatus.PendingPayment || BusinessTime.HasExpired(decisionAt, ExpiresAt))
+            throw new ApplicationFailureException(ApplicationError.StateConflict);
+        return ChangeStatus(OrderStatus.Confirmed, OrderActorKind.System, null, decisionAt, "Verified payment captured");
+    }
+
     private OrderStatusHistory ChangeStatus(OrderStatus target, OrderActorKind actorKind, Guid? actorId,
         DateTimeOffset now, string reason)
     {

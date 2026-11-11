@@ -13,12 +13,13 @@ public sealed class PaymentAttemptConfiguration : IEntityTypeConfiguration<Payme
     {
         b.ToTable("PaymentAttempts", "payments", t =>
         {
-            t.HasCheckConstraint("CK_PaymentAttempts_State", "\"Status\" IN ('Queued','Pending','Unknown','Failed') AND \"DeliveryCount\" BETWEEN 0 AND 8 AND (\"ObservedState\" IS NULL OR \"ObservedState\" IN ('Pending','Succeeded','Failed'))");
+            t.HasCheckConstraint("CK_PaymentAttempts_State", "\"Status\" IN ('Queued','Pending','Unknown','Failed','Captured') AND \"DeliveryCount\" BETWEEN 0 AND 8 AND (\"ObservedState\" IS NULL OR \"ObservedState\" IN ('Pending','Succeeded','Failed'))");
             t.HasCheckConstraint("CK_PaymentAttempts_Money", "\"Currency\" = 'USD' AND \"Amount\" > 0 AND \"Amount\" <= 9999999999999999.99");
             t.HasCheckConstraint("CK_PaymentAttempts_Times", "isfinite(\"CreatedAt\") AND isfinite(\"UpdatedAt\") AND isfinite(\"NextAttemptAt\") AND \"UpdatedAt\" >= \"CreatedAt\" AND \"NextAttemptAt\" >= \"CreatedAt\"");
             t.HasCheckConstraint("CK_PaymentAttempts_Lease", "(\"LeaseToken\" IS NULL AND \"LeaseExpiresAt\" IS NULL) OR (\"LeaseToken\" IS NOT NULL AND \"LeaseExpiresAt\" IS NOT NULL AND isfinite(\"LeaseExpiresAt\") AND \"LeaseExpiresAt\" > \"UpdatedAt\" AND \"DeliveryCount\" > 0)");
-            t.HasCheckConstraint("CK_PaymentAttempts_Observation", "(\"LastObservation\" IS NULL OR jsonb_typeof(\"LastObservation\") = 'object') AND (\"ObservedState\" IS DISTINCT FROM 'Succeeded' OR (\"Status\" = 'Pending' AND \"NeedsAttention\" AND \"ProviderTransactionId\" IS NOT NULL AND \"ProviderCaptureId\" IS NOT NULL))");
+            t.HasCheckConstraint("CK_PaymentAttempts_Observation", "(\"LastObservation\" IS NULL OR jsonb_typeof(\"LastObservation\") = 'object') AND (\"ObservedState\" IS DISTINCT FROM 'Succeeded' OR ((\"Status\" = 'Pending' AND \"NeedsAttention\" OR \"Status\" = 'Captured') AND \"ProviderTransactionId\" IS NOT NULL AND \"ProviderCaptureId\" IS NOT NULL))");
             t.HasCheckConstraint("CK_PaymentAttempts_Identity", "\"Provider\" = 'Simulator' AND \"ProviderRequestKey\" = 'payment-' || replace(\"Id\"::text,'-','')");
+            t.HasCheckConstraint("CK_PaymentAttempts_Captured", "\"Status\" <> 'Captured' OR (\"ObservedState\" IS NOT DISTINCT FROM 'Succeeded' AND \"ProviderCaptureId\" IS NOT NULL AND \"ProviderTransactionId\" IS NOT NULL AND \"LeaseToken\" IS NULL)");
         });
         b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
         b.HasOne<Order>().WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
@@ -29,6 +30,7 @@ public sealed class PaymentAttemptConfiguration : IEntityTypeConfiguration<Payme
         b.Property(x => x.ProviderTransactionId).HasMaxLength(100); b.Property(x => x.ProviderCaptureId).HasMaxLength(100);
         b.Property(x => x.LastObservation).HasColumnType("jsonb");
         b.HasIndex(x => new { x.Provider, x.ProviderRequestKey }).IsUnique();
+        b.HasIndex(x => new { x.Provider, x.ProviderTransactionId }).IsUnique().HasFilter("\"ProviderTransactionId\" IS NOT NULL");
         b.HasIndex(x => x.OrderId).IsUnique().HasFilter("\"Status\" IN ('Queued','Pending','Unknown')").HasDatabaseName("UX_PaymentAttempts_ActiveOrder");
         b.HasIndex(x => new { x.NextAttemptAt, x.Id }).HasFilter("\"Status\" IN ('Queued','Pending','Unknown') AND NOT \"NeedsAttention\"");
         b.Property(x => x.LeaseToken).IsConcurrencyToken();

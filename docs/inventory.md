@@ -84,3 +84,7 @@ Customer [checkout](checkout.md) now creates Active InventoryReservations and Re
 ## Reservation release (13)
 
 Customer [cancellation/expiry](orders.md) now takes the order lock first, then sorted balance/reservation locks. It changes Active -> Released, records ReleasedAt plus Cancelled/Expired reason, decrements Reserved without changing OnHand and appends a Customer Release movement under ReleaseStock:v1/reservation UUID. PostgreSQL blocks terminal reservation reactivation/metadata rewrites. State/history/release/outbox share one transaction; repeated cancellation has no second inventory effect. Admin fulfillment changes no stock. Consumption/payment and automatic expiry workers remain unimplemented.
+
+## Verified payment consumption
+
+Signed settlement now adds ConsumeStock:v1, keyed by reservation UUID. Under the existing order-before-sorted-balances/reservations locking transaction, an eligible Active reservation becomes Consumed with the frozen order-lock DecisionAt; both OnHand and Reserved decrease by quantity and one System consumption movement records equal negative deltas. ConsumedAt must be before ExpiresAt. Released/Consumed disposition and metadata are immutable; expiry/cancel cannot release consumed stock. Capture/order/history/outbox/inbox completion commits with this effect. Late/cancelled/surplus captured funds create compensation intentions instead of consuming released inventory. See [callback guide](payment-callbacks.md).

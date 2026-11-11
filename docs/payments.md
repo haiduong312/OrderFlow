@@ -1,6 +1,6 @@
-# Payment initiation and isolated simulator — milestones 15 / submission slice of 16
+# Payment initiation, isolated simulator and signed settlement
 
-This milestone implements durable payment intentions, provider submission/lookup and a separately runnable development/test simulator. It does **not** implement callback receipt, capture settlement, stock consumption, merchant refund workflows or a browser success redirect. Provider success leaves the merchant attempt unresolved and the order PendingPayment until future verified settlement. See [ADR-018](adr/0018-payment-initiation-and-simulator.md), [architecture](architecture.md), [expiry](expiry-worker.md) and [implementation status](implementation-status.md).
+Initiation/submission and the separate simulator remain as documented below. Signed receipt, capture settlement, stock consumption and merchant full-refund intentions now ship in roadmap 17 / allocation slice of 18; see [callback runbook](payment-callbacks.md) and [ADR-019](adr/0019-signed-payment-settlement.md). Refund delivery/reconciliation and browser UI remain deferred. Provider success leaves the merchant attempt unresolved and the order PendingPayment until verified signed callback settlement. See [ADR-018](adr/0018-payment-initiation-and-simulator.md), [architecture](architecture.md), [expiry](expiry-worker.md) and [implementation status](implementation-status.md).
 
 ## Browser contract
 
@@ -45,7 +45,7 @@ Retry delays after delivery are 5s, 15s, 30s, 1m, 2m, 5m, 10m; maximum eight cla
 
 `PaymentWorker` is opt-in (`PaymentProcessing__Enabled=false` by default). Enabled mode schedules at most 20 sequential attempts/pass with a cancellable TimeProvider-aware 5-second delay. Each processor phase owns its DI scope. Known PostgreSQL contention logs 1503 and postpones the pass; unexpected failures stop Generic Host visibly. Gateway uncertainty logs 1502, NeedsAttention 1504; IDs/codes are logged, not payloads, secrets or signatures. Seed commands suppress jobs.
 
-Admission is decided under the order lock; provider I/O happens later and can complete after cancellation/expiry. Provider capture evidence is retained, but this milestone cannot allocate it or refund it. Future signed settlement must apply the existing deadline/compensation rules under order-before-inventory locks; it must never treat submit/lookup/browser results as confirmed order payment. Use this simulator only for development/test, not real funds.
+Admission is decided under the order lock; provider I/O happens later and can complete after cancellation/expiry. Provider capture observations are retained. The signed settlement consumer applies the deadline/compensation rules under order-before-inventory locks; submit/lookup/browser results alone never confirm an order. Merchant refunds are currently durable intentions, with HTTP execution/reconciliation deferred. Use this simulator only for development/test, not real funds.
 
 ## Separately controlled provider host
 
@@ -71,9 +71,9 @@ The host accepts its own ConnectionStrings__OrderFlow. It may use another databa
 
 ## Signed callback generation and refunds
 
-Callback envelope fields: KeyId, Timestamp (Unix seconds), Signature (hex HMAC-SHA256), Body (the exact JSON text). Sign bytes are UTF-8 `timestamp + "." + Body`. Body contains schemaVersion=1, provider=Simulator, stable providerEventId/occurredAt and payment result. Redelivery preserves event ID/body and gets a fresh signed delivery timestamp. CallbackSigningKey is distinct from the machine/control keys; CallbackKeyId defaults to development-v1. Generation does not send an HTTP callback and no API callback endpoint exists yet. Future receipt must verify raw bytes/timestamp skew/fixed-time signature before durable inbox acceptance; future settlement owns order/capture/refund effects.
+Callback envelope fields: KeyId, Timestamp (Unix seconds), Signature (hex HMAC-SHA256), Body (the exact JSON text). Sign bytes are UTF-8 `timestamp + "." + Body`. Body contains schemaVersion=1, provider=Simulator, stable providerEventId/occurredAt and payment result. Redelivery preserves event ID/body and gets a fresh signed delivery timestamp. CallbackSigningKey is distinct from the machine/control keys; CallbackKeyId defaults to development-v1. Generation does not send an HTTP callback. The merchant POST /api/payments/simulator/callback now verifies raw bytes/timestamp skew/fixed-time signature before durable inbox acceptance; its database settlement consumer owns capture/order/refund-intention effects.
 
-Refund methods implement the provider contract now: one stable full-refund result per capture, repeated key/body returns the same RefundId; changed amount/capture or another full refund identity conflicts. There are no merchant Refunds tables, refund worker or customer paid-order cancellation/refund UX. Provider refund success is not evidence that a merchant compensation workflow has been implemented.
+Refund methods implement the provider contract now: one stable full-refund result per capture, repeated key/body returns the same RefundId; changed amount/capture or another full refund identity conflicts. Merchant Refunds now holds unique RefundPending intentions; there is no merchant refund delivery worker or customer paid-order cancellation/refund UX. Provider refund success is not evidence that a merchant compensation workflow has been implemented.
 
 ## Setup and manual verification
 
@@ -115,10 +115,14 @@ The existing explicit ORDERFLOW_TEST_POSTGRES override may supply actual Postgre
 
 Coverage: ownership/auth/CSRF/tampering, exact expiry, same/different client-key races, original response replay, failed replacement, real HTTP pending/success/failure/timeouts, amount mismatch, provider restart, stable IDs, concurrent provider idempotency, callback signatures/redelivery/control isolation, full refund replay, uniqueness/immutable DB guards, intent rollback and lost merchant observation/reclaim. An independent connection acquires merchant Order/Attempt NOWAIT locks at gateway invocation, proving the intention is committed and no merchant transaction is held over HTTP.
 
-Limits: no verified capture settlement/consumption/refund intentions, callback authentication endpoint/inbox, callback delivery scheduler, operator replay UI/command, external broker, real payment provider or production deployment claim. Host restart and injected DB-failure tests run in one test process; OS kill/partition/uncertain-commit suites remain future work. Financial uncertainty after retry exhaustion remains visible and blocks replacements until future audited reconciliation, rather than inventing failure.
+Limits: no callback delivery scheduler, merchant refund HTTP worker/reconciliation, operator replay UI/command, generic outbox dispatcher, external broker, real payment provider or production deployment claim. Host restart and injected DB-failure tests run in one test process; OS kill/partition/uncertain-commit suites remain future work. Financial uncertainty after retry exhaustion remains visible and blocks replacements until future audited reconciliation, rather than inventing failure.
 
 1. Vì sao lưu attempt trước gọi gateway? Để mất response/restart vẫn tìm được ý định và dùng lại cùng provider key; không giữ transaction qua HTTP.
 2. Vì sao timeout không phải Failed? Provider có thể đã capture; tạo attempt mới có thể thu tiền hai lần. Giữ Unknown và query key cũ.
 3. Vì sao cần cả lease token và provider idempotency? Token chặn worker cũ ghi đè DB; provider key chống lặp hiệu ứng ngoài DB khi lease hết hạn hoặc response mất.
 
 References: [HttpClient lifetime guidance](https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/httpclient-guidelines), [PostgreSQL partial indexes](https://www.postgresql.org/docs/18/indexes-partial.html), [HMACSHA256](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.hmacsha256.hashdata?view=net-10.0).
+
+## Signed receipt and settlement now available
+
+The historical submission-only limitations above describe ADR-018. [ADR-019](adr/0019-signed-payment-settlement.md) and [callback runbook](payment-callbacks.md) supersede callback/consumption/compensation-intention deferrals. Submit/query success still cannot confirm an order; only authenticated, validated, eligible callback processing can. Merchant refund network delivery/reconciliation, generic dispatch and callback scheduling remain deferred.

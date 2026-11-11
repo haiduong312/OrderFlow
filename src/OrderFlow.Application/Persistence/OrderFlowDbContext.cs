@@ -18,6 +18,9 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options)
 {
     public DbSet<PaymentAttempt> PaymentAttempts => Set<PaymentAttempt>();
+    public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
+    public DbSet<PaymentCapture> PaymentCaptures => Set<PaymentCapture>();
+    public DbSet<PaymentRefund> PaymentRefunds => Set<PaymentRefund>();
     public DbSet<ProviderPayment> ProviderPayments => Set<ProviderPayment>();
     public DbSet<ProviderScenario> ProviderScenarios => Set<ProviderScenario>();
     public DbSet<ProviderRefund> ProviderRefunds => Set<ProviderRefund>();
@@ -46,6 +49,9 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     {
         base.OnModelCreating(builder);
         builder.ApplyConfiguration(new PaymentAttemptConfiguration());
+        builder.ApplyConfiguration(new PaymentEventConfiguration());
+        builder.ApplyConfiguration(new PaymentCaptureConfiguration());
+        builder.ApplyConfiguration(new PaymentRefundConfiguration());
         builder.ApplyConfiguration(new ProviderPaymentConfiguration());
         builder.ApplyConfiguration(new ProviderScenarioConfiguration());
         builder.ApplyConfiguration(new ProviderRefundConfiguration());

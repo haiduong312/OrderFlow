@@ -17,7 +17,6 @@ public class CompositionSmokeTests
     [InlineData("/_tests/auth/unsafe")]
     [InlineData("/control/payments/example/resolve")]
     [InlineData("/provider/payments")]
-    [InlineData("/api/payments/simulator/callback")]
     [InlineData("/_tests/resource-authorization/customer/00000000-0000-0000-0000-000000000001")]
     public async Task Production_host_does_not_discover_test_probe_controllers(string path)
     {
@@ -45,6 +44,16 @@ public class CompositionSmokeTests
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(timeout.Token);
         Assert.Equal("Healthy", body.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Callback_is_a_POST_route_and_has_no_browser_success_GET()
+    {
+        await using var factory = new WebApplicationFactory<Api.Program>()
+            .WithWebHostBuilder(builder => builder.UseEnvironment(Environments.Production));
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/api/payments/simulator/callback");
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 
     [Fact]

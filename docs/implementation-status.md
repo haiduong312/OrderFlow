@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-06 (Asia/Ho_Chi_Minh). Current milestone: **15 / submission foundations of 16 — durable payment initiation and restricted separate simulator host**. Authenticated owner initiation/current reads, one unresolved attempt/order, original 202 replay, server money/provider identity, lease-fenced submission/reconciliation, independent provider persistence, signed callback generation and provider-side idempotent full refunds are implemented. Order confirmation/consumption, callback receipt/settlement, merchant compensation, remaining dispatch/inbox 14, UI and deployment remain pending.
+Updated: 2026-11-11 (Asia/Ho_Chi_Minh). Current milestone: **17 / allocation and compensation-intention slice of 18 — signed payment callbacks and atomic settlement**. Raw-byte provider authentication, durable PaymentEvents/inbox deduplication, quarantine, monotonic captures, order-first confirmation/consumption, late/surplus/mismatched capture compensation intentions and deterministic races are implemented. Merchant refund network delivery/reconciliation, general dispatch, UI and deployment remain pending.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -38,16 +38,16 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 07 | Products/Categories domain/schema, Admin create/update/archive, public read/search/paging, exact prices and concurrency | 03, 06 | A03 | Complete: Catalog slice; Order snapshots/totals remain 11/12 |
 | 08 | Inventory balances/append-only movements, zero initialization/backfill, Admin receipts/adjustments/replay and stock races | 07 | A04, A16 | Complete: stock foundation; reservations deferred to 09 |
 | 08a | Reusable PostgreSQL/WebApplicationFactory harness, per-case isolation, logical time and safe race boundaries | 08 | A02, A04, A16, A23 (current slices) | Complete: 238 tests; PostgreSQL subset repeated; no new business feature |
-| 09 | Reservation model/behavior and necessary Order identity/FK prerequisites; SQL/domain/race tests | 08 | A04, A07, A08, A16 | Active create/reserve delivered in 12; release/terminal guards in 13; consumption remains with capture integration |
+| 09 | Reservation model/behavior and necessary Order identity/FK prerequisites; SQL/domain/race tests | 08 | A04, A07, A08, A16 | Active create/reserve delivered in 12; release/terminal guards in 13; consumption delivered with signed settlement in 17/18 |
 | 10 | Operation-specific normalization, replay/conflict protocol using the shared idempotency store | 03, 06 | A06 | CreateOrder:v1 normalization/replay/conflict delivered with 12; later operations retain separate identities |
-| 11 | Complete Order/item snapshots/lifecycle and transactional events on reservation/Order foundations | 07, 09 | A03, A07, A08 | Creation delivered in 12; cancellation/expiry and fulfillment/history in 13; confirmation/payment integration remains 18 |
+| 11 | Complete Order/item snapshots/lifecycle and transactional events on reservation/Order foundations | 07, 09 | A03, A07, A08 | Creation delivered in 12; cancellation/expiry and fulfillment/history in 13; verified confirmation delivered in 17/18 |
 | 12 | Atomic CreateOrder/reserve + original response; stock/idempotency concurrency and rollback | 08a; checkout portions of 09–11 | A05, A06, A08 creation/replay, A16, A23 | Complete for requested checkout; see evidence and remaining lifecycle work below |
 | 13 | Own order reads/list, pending cancellation/release, requested Admin fulfillment and authorization/race regressions | 12 | A02, A07 release, A08, A09, A15 graph | Complete for requested scope; automatic expiry and payment/capture integration remain later |
 | 14 | Outbox dispatch/inbox and worker lease/retry foundation; expiry worker + deterministic races | 13 | A07–A09, A16–A19 | Expiry slice complete: bounded SKIP LOCKED worker + deterministic races; dispatch/inbox remain pending |
 | 15 | Payment attempt/intention schema, request idempotency, active-attempt constraint, customer start/read | 10; expiry/worker foundations of 14 | A12, A13, A23 | Complete for requested initiation scope; verified settlement remains 17/18 |
 | 16 | Durable gateway simulator, submission/query worker, independent transaction boundary and uncertainty | 15 | A12, A13, A19, A23 | Provider/submission/reconciliation foundations complete; callback delivery/receipt and merchant compensation remain later |
-| 17 | Signed callback receipt/inbox, verification, duplicate/quarantine handling and replay tests | 16 | A13, A14 | Pending |
-| 18 | Atomic capture confirmation/stock consumption; late capture compensation/refund reconciliation and races | 17 | A07–A13, A16, A17, A19, A23 | Pending |
+| 17 | Signed callback receipt/inbox, verification, duplicate/quarantine handling and replay tests | 16 | A13, A14 | Complete: signed bounded receipt, exact-byte identity/deduplication, durable inbox and quarantine; see ADR-019 |
+| 18 | Atomic capture confirmation/stock consumption; late capture compensation/refund reconciliation and races | 17 | A07–A13, A16, A17, A19, A23 | Allocation/consumption and unique full-compensation intentions complete; merchant refund delivery/reconciliation remains pending |
 | 19 | Admin fulfillment state machine, expected versions, order inspection and authorization | 13; verified payment integration 18 | A02, A15 | Requested list/detail/graph/expectedVersion APIs delivered in 13; verified payment-confirmed end-to-end integration remains 18/19 |
 | 20 | Browser session/CSRF flow, active catalog, cart and exact cents state | 05, 06, 07 | A03, A20 | Pending |
 | 21 | Checkout UI, pending key/body recovery, authoritative order/deadline/payment/cancel views | 18, 20 | A03, A20 | Pending |
@@ -914,3 +914,68 @@ Three interview questions (understand before signed settlement work):
 3. Why both lease token and provider idempotency? Token fences stale database observations; provider key protects repeated external effects when a lease expires or a response is lost.
 
 Suggested commit title (adjusted to delivered scope): `feat: add idempotent payment initiation and isolated simulator`.
+
+## Signed payment callbacks and atomic settlement — 17 / allocation slice of 18 (2026-11-11)
+
+### Scope and decisions
+
+Implements the requested signed callbacks, durable PaymentEvents deduplication, capture facts, stock consumption/order confirmation and unique RefundPending intentions. The existing spec already requires separate receipt/processing and known USD amount mismatch compensation; these were reported before dependent implementation and followed. This is not the full roadmap 18 refund-delivery/reconciliation workflow or generic messaging dispatcher. [ADR-019](adr/0019-signed-payment-settlement.md) records the exact protocol, locks, database-only inbox consumer and scope. No package/SDK changes or new architecture layer; no commit/push/deploy or developer database migration.
+
+### Acceptance delivered
+
+| Criterion | Result |
+| --- | --- |
+| Provider authentication / A14 | Dedicated injected secret/key ID; exact raw bytes + canonical delivery timestamp HMAC-SHA256; fixed-time compare; five-minute skew with inclusive boundary; no cookie authority; explicit sole business CSRF exemption |
+| Input bounds/schema | Declared/streaming bodies capped at 64 KiB; reject encoded bodies, malformed/duplicate/missing/unknown JSON, invalid identities/money/state; no paid flag |
+| Durable receipt/dedup | PaymentEvents unique provider/event ID; preserve exact bytes + hash; atomic existing messaging inbox insert before 202; exact replay 202; changed authenticated bytes 409 + alert 1601 |
+| Reference/currency/amount validation | Validate stored order/attempt/key/provider/transaction and capture identity; unknown/mismatched references/non-USD durably quarantined with Failed inbox/error; known positive USD amount mismatch captured and compensated in full, never confirmed |
+| Capture / A10, A13 | Independent immutable PaymentCaptures, Captured attempt; monotonic success/failure/pending processing and submission lease fencing; one allocated capture/order; old Failed can later capture |
+| Allocation / A07–A11, A16 | Order lock first, sample normalized DecisionAt; exact matching unexpired pending order consumes Active reservations, decrements both stock quantities, confirms, appends System history/order+payment outbox and completes inbox atomically |
+| Expiry/cancellation / A11 | Receipt/provider time never overrides decision time; overdue pending expires/releases in same transaction; terminal orders never resurrect; Released/Consumed stay terminal; late/surplus captures create one full RefundPending/provider capture |
+| Persistence guards | SQL immutable/terminal triggers, unique transaction/capture/allocation/refund identities, ConsumedAt check; deferred commit constraints require correct capture allocation or full matching compensation |
+| Worker/recovery | Opt-in PaymentSettlement Worker; 20 sequential events/pass, fresh context per event; no HTTP in transaction; classified contention has durable five-second scheduling/eight-attempt limit, then visible Failed inbox; unexpected errors propagate |
+| Compatibility | Browser CSRF/ownership and original initiation replay retained; new initiation reuses only Queued/Pending/Unknown, including replacement after mismatched captured payment |
+| Tests | Real PostgreSQL receipt/cancel/expiry/settlement races with distinct-context gates; boundary/held-lock/frozen-decision tests; callback/submission response race; stock/ledger/capture/refund reconciliation; receipt/inbox and executed-consumption/outbox rollback; SQL evidence/compensation guards |
+
+### Luồng chính (Vietnamese)
+
+API đọc tối đa 64 KiB byte gốc, xác thực HMAC cùng timestamp bằng secret riêng rồi mới parse schema. Một transaction INSERT PaymentEvents theo provider/event ID và ghi inbox; duplicate giống byte trả 202, khác byte trả 409 và log cảnh báo. 202 chỉ xác nhận đã lưu bền vững.
+
+Worker dùng scope/DbContext mới cho mỗi event. Transaction khóa Order trước và lấy DecisionAt UTC, sau đó khóa danh tính provider/attempt/receipt/inbox để kiểm tra lại. Capture USD đúng tiền, đúng attempt và còn hạn tiêu thụ từng Active reservation theo ProductId: giảm cả OnHand/Reserved, tạo ledger, xác nhận đơn, ghi history System/outbox và đánh dấu inbox trong cùng commit. Nếu đơn quá hạn, release chỉ Active và chuyển Expired; capture vẫn là sự thật tài chính độc lập, có một RefundPending với số tiền thực thu. Cancelled/Expired/đơn đã thanh toán không sống lại. Callback thất bại đến muộn không xóa Captured; callback kết thúc lease để response gateway cũ không ghi đè. RefundPending chưa thực hiện HTTP hoàn tiền.
+
+### Important files and migration
+
+- API/Payments/PaymentCallbackController + PaymentCallbackSettings: bounded transport, headers/HMAC/skew, strict schema, CSRF exemption and injected private configuration; API Program/appsettings/OpenAPI updated.
+- Application/Modules/Payments/PaymentCallback, PaymentCallbackReceipt, PaymentEvent and PaymentSettlementProcessor: protocol, exact-byte receipt/inbox, independent capture/refund intentions, order-first database settlement and bounded durable contention handling.
+- Existing PaymentAttempt/PaymentInitiationService: monotonic Captured/Failed handling, submission response fencing and explicit unresolved-state reuse. Existing InventoryBalance/Reservation/StockMovement and Order add consumption/System confirmation rules.
+- PaymentSettlementConfiguration, shared context and existing inventory/ordering/payment mappings: uniqueness/FKs/checks; Worker/PaymentSettlementWorker and WorkerHost/appsettings: opt-in fresh-scope polling independent of gateway.
+- Migration **20261111040724_AddSignedPaymentSettlement**, designer/snapshot: additive PaymentEvents/PaymentCaptures/Refunds and ConsumedAt, revised state/history constraints, immutable/terminal and deferred disposition guards. Down refuses evidence loss. Applied only to owned test databases.
+- PaymentCallbackTests, PaymentSettlementDomainTests, composition/migration-count regressions; [callback runbook](payment-callbacks.md), [payment guide](payments.md), spec/architecture/ADR/testing/README updated.
+
+### Exact verification evidence
+
+All final commands use `DOTNET_CLI_HOME=/tmp/orderflow-callbacks/dotnet-home` and `NUGET_PACKAGES=/tmp/orderflow-callbacks/packages`. No package/SDK pins or lockfiles changed. The first sandbox restore failed with NU1301/permission denied to api.nuget.org; approved network restore to /tmp resolved it. Tests used disposable Testcontainers PostgreSQL, not a developer database or EF InMemory. Docker/test-host execution required approved sandbox access; all verification below completed successfully.
+
+1. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-callbacks/artifacts --disable-parallel -m:1` — exit 0/all six projects; `/tmp/orderflow-callbacks-restore.log`. `dotnet tool restore` — exit 0, pinned dotnet-ef 10.0.14; `/tmp/orderflow-callbacks-tools.log`.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-callbacks/artifacts -m:1` — final exit 0, **0 warnings/errors**, `/tmp/orderflow-callbacks-build-final.log`.
+3. `dotnet ef migrations add AddSignedPaymentSettlement --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output-dir Persistence/Migrations` with `ArtifactsPath=/tmp/orderflow-callbacks/artifacts` and a nonconnecting design-only connection — exit 0. Reviewed generated additive changes, added SQL immutable/terminal/deferred compensation guards, and replaced destructive Down with refusal. No developer database was updated; actual Up executed only in owned test DBs.
+4. Initial focused `dotnet test tests/OrderFlow.IntegrationTests/OrderFlow.IntegrationTests.csproj -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-callbacks/artifacts -m:1 --filter 'FullyQualifiedName~PaymentCallbackTests' --logger 'trx;LogFileName=callbacks-focused.trx' --results-directory /tmp/orderflow-callbacks/results` — exit 0, **24 passed**, no failed/skipped. Expanded `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-callbacks/artifacts -m:1 --filter 'FullyQualifiedName~PaymentCallbackTests|FullyQualifiedName~PaymentSettlementDomainTests' --logger 'trx;LogFilePrefix=callbacks-expanded' --results-directory /tmp/orderflow-callbacks/results` — exit 0, **30 PostgreSQL + 5 domain passed**, no failed/skipped. Subsequent acceptance additions are included in the full run below.
+5. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-callbacks/artifacts -m:1 --logger 'trx;LogFilePrefix=callbacks-full' --results-directory /tmp/orderflow-callbacks/results` — exit 0, **323 integration + 109 unit = 432 passed**, **0 failed/skipped**. Includes **235 actual PostgreSQL cases**, of which **35 are new callback/settlement cases**, plus five new domain cases and updated composition regressions. Evidence: `/tmp/orderflow-callbacks-full-tests.log`; TRX `callbacks-full_net10.0_20261111111936.trx` and `callbacks-full_net10.0_20261111111937.trx` under `/tmp/orderflow-callbacks/results`.
+6. Final worker review removed the outer automatic contention loop: the processor already persists bounded per-event retries; a failure while recording retry metadata must propagate visibly. Rebuilt successfully, then `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-callbacks/artifacts -m:1 --filter 'Category!=PostgreSQL' --logger 'trx;LogFilePrefix=callbacks-service-free-final' --results-directory /tmp/orderflow-callbacks/results` — exit 0, **88 integration + 109 unit = 197 passed**, no failed/skipped, including final Worker composition. Evidence `/tmp/orderflow-callbacks-service-free.log` and `callbacks-service-free-final_net10.0_20261111112057.trx` / `...112058.trx`. No SQL/settlement changes followed the full PostgreSQL run.
+7. `dotnet ef migrations has-pending-model-changes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` with matching ArtifactsPath/design connection — exit 0, **no model drift**; `/tmp/orderflow-callbacks-drift.log`. `dotnet ef migrations script --idempotent --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output /tmp/orderflow-callbacks/migrations.sql` — exit 0; reviewed SQL includes deferred capture/refund disposition and immutable/terminal guards; `/tmp/orderflow-callbacks-script.log`. `git diff --check` — exit 0.
+
+Not claimed: real provider/funds, merchant refund HTTP execution/reconciliation, automated callback delivery, deployed multi-process/OS-kill/network-partition/uncertain-commit testing or production key rotation. Callback/stock races use actual concurrent contexts/SQL and deterministic synchronization, not a claim about external exactly-once delivery.
+
+### Manual verification and trade-offs
+
+Follow [callback runbook](payment-callbacks.md): explicitly migrate; privately configure matching API PaymentCallbacks secret/key ID and simulator callback signing credential; enable PaymentSettlement Worker independently; obtain an operator-generated simulator envelope and POST exact Body bytes with the three documented headers. Check owner GET for current state, redeliver duplicates, tamper bytes, cancel before success and inspect RefundPending. Original payment initiation replay remains its initial accepted snapshot.
+
+The simulator does not schedule callback HTTP delivery. Refund network execution/reconciliation, generic outbox dispatch, operator replay/UI and production provider hardening remain pending. Database-only inbox processing deliberately uses held row locks instead of introducing network leases. Multiple workers may discover the same event and recheck under locks, which trades throughput for simple rollback semantics. Failed/quarantined inbox rows remain visible for future audited reconciliation; no automatic unsafe reassociation, currency conversion or exactly-once external-effect claim. No developer data/volume was reset.
+
+### Three interview questions
+
+1. **Vì sao 202 chưa có nghĩa đã thanh toán thành công?** Hiểu durable receipt/inbox tách khỏi settlement, worker lag và crash recovery.
+2. **Vì sao phải khóa Order trước và dùng DecisionAt thay vì occurredAt?** Hiểu điểm quyết định chung với cancellation/expiry, equality hết hạn và cách giữ quyết định khi chờ inventory.
+3. **Vì sao Captured khác Confirmed, và dedup event chưa đủ?** Hiểu capture là tiền thực thu; event/capture/refund có danh tính riêng; tiền đến muộn/surplus phải có full-compensation intention và không tiêu thụ/release lần hai.
+
+Suggested commit title (no title supplied; reflects delivered 17 / allocation slice of 18): `feat: add signed payment callbacks and atomic settlement`.

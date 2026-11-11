@@ -5,7 +5,7 @@ using OrderFlow.Application.Modules.Ordering;
 
 namespace OrderFlow.Application.Modules.Payments;
 
-public enum PaymentAttemptStatus { Queued, Pending, Unknown, Failed }
+public enum PaymentAttemptStatus { Queued, Pending, Unknown, Failed, Captured }
 
 public sealed class PaymentAttempt
 {
@@ -43,7 +43,7 @@ public sealed class PaymentAttempt
 
     public Guid Claim(DateTimeOffset now)
     {
-        if (Status == PaymentAttemptStatus.Failed || NeedsAttention || DeliveryCount >= 8 || NextAttemptAt > now
+        if (Status is PaymentAttemptStatus.Failed or PaymentAttemptStatus.Captured || NeedsAttention || DeliveryCount >= 8 || NextAttemptAt > now
             || LeaseExpiresAt > now) throw new InvalidOperationException("The payment attempt is not claimable.");
         LeaseToken = Guid.NewGuid(); LeaseExpiresAt = now.AddSeconds(60); DeliveryCount++; UpdatedAt = now;
         // Persist exhaustion in the claim too: a crash during the eighth network call must
@@ -54,7 +54,15 @@ public sealed class PaymentAttempt
 
     public void Observe(GatewayPaymentResult? result, string? errorCode, DateTimeOffset now)
     {
+        // A callback may settle while the gateway HTTP request is still in flight.
+        if (Status == PaymentAttemptStatus.Captured) return;
         if (LeaseToken is null) throw new InvalidOperationException("Observation requires the current lease.");
+        // Provider capture evidence is monotonic even before verified callback settlement.
+        if (ObservedState == GatewayPaymentState.Succeeded)
+        {
+            LeaseToken = null; LeaseExpiresAt = null;
+            return;
+        }
         if (result is not null)
         {
             LastObservation = JsonSerializer.Serialize(result, GatewayJson.Options);
@@ -84,6 +92,28 @@ public sealed class PaymentAttempt
         { NeedsAttention = true; LastErrorCode ??= "reconciliation_exhausted"; }
         int[] delays = [5, 15, 30, 60, 120, 300, 600, 600];
         UpdatedAt = now; NextAttemptAt = now.AddSeconds(delays[Math.Clamp(DeliveryCount - 1, 0, 7)]);
+        LeaseToken = null; LeaseExpiresAt = null;
+    }
+
+    public void ApplyCallback(GatewayPaymentResult result, DateTimeOffset decisionAt)
+    {
+        if (Status == PaymentAttemptStatus.Captured) return;
+        ProviderTransactionId ??= result.TransactionId;
+        if (result.State == GatewayPaymentState.Succeeded)
+        {
+            ProviderCaptureId ??= result.CaptureId;
+            ObservedState = GatewayPaymentState.Succeeded;
+            Status = PaymentAttemptStatus.Captured;
+        }
+        else if (ObservedState != GatewayPaymentState.Succeeded && Status != PaymentAttemptStatus.Failed)
+        {
+            ObservedState = result.State;
+            Status = result.State == GatewayPaymentState.Failed ? PaymentAttemptStatus.Failed : PaymentAttemptStatus.Pending;
+        }
+        else return;
+        UpdatedAt = decisionAt > UpdatedAt ? decisionAt : UpdatedAt;
+        NeedsAttention = false; LastErrorCode = null;
+        // Fence the submission response; its old lease must not overwrite this fact.
         LeaseToken = null; LeaseExpiresAt = null;
     }
 }

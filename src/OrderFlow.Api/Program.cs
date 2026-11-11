@@ -6,6 +6,7 @@ using OrderFlow.Api.Catalog;
 using OrderFlow.Api.Inventory;
 using OrderFlow.Application.Modules.Ordering;
 using OrderFlow.Application.Modules.Payments;
+using OrderFlow.Api.Payments;
 
 namespace OrderFlow.Api;
 
@@ -23,9 +24,12 @@ public class Program
         builder.Services.AddScoped<OrderReadService>();
         builder.Services.AddScoped<OrderLifecycleService>();
         builder.Services.AddScoped<PaymentInitiationService>();
+        builder.Services.AddSingleton(_ => PaymentCallbackSettings.Read(builder.Configuration));
+        builder.Services.AddScoped<PaymentCallbackReceipt>();
         var app = builder.Build();
         // Validate final configuration before accepting any requests, including in test hosts.
         _ = app.Services.GetRequiredService<BrowserAuthSettings>();
+        _ = app.Services.GetRequiredService<PaymentCallbackSettings>();
         app.UseHttpFoundations();
 
         // Liveness describes this process only, not database or worker readiness.

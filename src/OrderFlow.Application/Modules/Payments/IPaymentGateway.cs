@@ -14,7 +14,7 @@ public interface IPaymentGateway
 {
     Task<GatewayPaymentResult> SubmitAsync(GatewayPaymentRequest request, CancellationToken cancellationToken);
     Task<GatewayPaymentResult?> LookupAsync(string requestKey, CancellationToken cancellationToken);
-    // Provider contract only; merchant refund intentions/settlement remain a later milestone.
+    // Provider refund contract; merchant intention delivery/reconciliation remains a later milestone.
     Task<GatewayRefundResult> RefundAsync(GatewayRefundRequest request, CancellationToken cancellationToken);
     Task<GatewayRefundResult?> LookupRefundAsync(string requestKey, CancellationToken cancellationToken);
 }

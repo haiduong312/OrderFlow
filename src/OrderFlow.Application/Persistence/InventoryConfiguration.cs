@@ -63,6 +63,11 @@ public sealed class StockMovementConfiguration : IEntityTypeConfiguration<StockM
                       OR ("ActorKind" = 'System' AND "ActorUserId" IS NULL AND "Reason" = 'Reservation released: Expired')) AND "Revision" > 0
                  AND "OrderId" IS NOT NULL AND "ReservationId" IS NOT NULL AND "OperationId" = "ReservationId"
                  AND "OnHandDelta" = 0 AND "ReservedDelta" BETWEEN -1000 AND -1)
+                OR
+                ("Kind" = 'Consumption' AND "Operation" = 'ConsumeStock:v1'
+                 AND "ActorKind" = 'System' AND "ActorUserId" IS NULL AND "Revision" > 0
+                 AND "OrderId" IS NOT NULL AND "ReservationId" IS NOT NULL AND "OperationId" = "ReservationId"
+                 AND "ReservedDelta" BETWEEN -1000 AND -1 AND "OnHandDelta" = "ReservedDelta")
                 """);
         });
         builder.HasKey(movement => movement.Id);

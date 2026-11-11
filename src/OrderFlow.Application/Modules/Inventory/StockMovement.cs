@@ -3,7 +3,7 @@ using OrderFlow.Application.Common.Time;
 
 namespace OrderFlow.Application.Modules.Inventory;
 
-public enum StockMovementKind { Initialization, Receipt, Adjustment, Reservation, Release }
+public enum StockMovementKind { Initialization, Receipt, Adjustment, Reservation, Release, Consumption }
 public enum StockActorKind { System, Admin, Customer }
 
 public sealed class StockMovement
@@ -12,6 +12,7 @@ public sealed class StockMovement
     public const string StockChangeOperation = "ChangeStock:v1";
     public const string ReservationOperation = "ReserveStock:v1";
     public const string ReleaseOperation = "ReleaseStock:v1";
+    public const string ConsumptionOperation = "ConsumeStock:v1";
     private StockMovement() { }
     public Guid Id { get; private set; }
     public Guid ProductId { get; private set; }
@@ -80,6 +81,18 @@ public sealed class StockMovement
         OnHandDelta = 0, ReservedDelta = -reservation.Quantity, OnHandBefore = onHand, OnHandAfter = onHand,
         ReservedBefore = reserved, ReservedAfter = reserved - reservation.Quantity, Revision = revision,
         OccurredAt = reservation.ReleasedAt!.Value
+    };
+
+    internal static StockMovement Consume(InventoryReservation reservation, int onHand, int reserved,
+        long revision, DateTimeOffset now) => new()
+    {
+        Id = Guid.NewGuid(), ProductId = reservation.ProductId, Operation = ConsumptionOperation,
+        OperationId = reservation.Id, OrderId = reservation.OrderId, ReservationId = reservation.Id,
+        Kind = StockMovementKind.Consumption, ActorKind = StockActorKind.System,
+        Reason = "Stock consumed for verified payment", OnHandDelta = -reservation.Quantity,
+        ReservedDelta = -reservation.Quantity, OnHandBefore = onHand, ReservedBefore = reserved,
+        OnHandAfter = onHand - reservation.Quantity, ReservedAfter = reserved - reservation.Quantity,
+        Revision = revision, OccurredAt = now
     };
 
     private static ApplicationFailureException Invalid(string field, string message) =>

@@ -11,6 +11,20 @@ public sealed class InventoryBalance
     public long Revision { get; private set; }
     public int Available => OnHand - Reserved;
 
+    public StockMovement Consume(InventoryReservation reservation, DateTimeOffset decisionAt)
+    {
+        if (reservation.ProductId != ProductId || reservation.Status != ReservationStatus.Active
+            || Reserved < reservation.Quantity || OnHand < reservation.Quantity)
+            throw new InvalidOperationException("Consumption requires a matching active, fully backed reservation.");
+        if (Revision == long.MaxValue) throw new ApplicationFailureException(ApplicationError.StockLimitExceeded);
+        reservation.Consume(decisionAt);
+        var movement = StockMovement.Consume(reservation, OnHand, Reserved, Revision + 1, decisionAt);
+        OnHand -= reservation.Quantity;
+        Reserved -= reservation.Quantity;
+        Revision++;
+        return movement;
+    }
+
     public static InventoryBalance Zero(Guid productId) => productId != Guid.Empty
         ? new() { ProductId = productId }
         : throw new ArgumentException("A product ID is required.", nameof(productId));

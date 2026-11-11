@@ -55,7 +55,8 @@ public sealed class PaymentInitiationService(OrderFlowDbContext database, ICurre
             throw new ApplicationFailureException(ApplicationError.OrderExpired);
         }
         if (order.Status != OrderStatus.PendingPayment) throw new ApplicationFailureException(ApplicationError.StateConflict);
-        var attempt = await database.PaymentAttempts.SingleOrDefaultAsync(row => row.OrderId == orderId && row.Status != PaymentAttemptStatus.Failed, cancellationToken);
+        var attempt = await database.PaymentAttempts.SingleOrDefaultAsync(row => row.OrderId == orderId
+            && (row.Status == PaymentAttemptStatus.Queued || row.Status == PaymentAttemptStatus.Pending || row.Status == PaymentAttemptStatus.Unknown), cancellationToken);
         if (attempt is null) { attempt = PaymentAttempt.Create(order, now); database.PaymentAttempts.Add(attempt); }
         var body = JsonSerializer.SerializeToUtf8Bytes(View(attempt), GatewayJson.Options);
         var location = $"/api/orders/{orderId:D}/payment-attempts/{attempt.Id:D}";
