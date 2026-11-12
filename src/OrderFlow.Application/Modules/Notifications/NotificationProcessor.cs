@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using OrderFlow.Application.Common.Time;
 using OrderFlow.Application.Messaging;
+using OrderFlow.Application.Modules.Emails;
 using OrderFlow.Application.Modules.Ordering;
 using OrderFlow.Application.Persistence;
 
@@ -61,6 +62,21 @@ public sealed class NotificationProcessor(OrderFlowDbContext database, TimeProvi
             Payload = JsonSerializer.Serialize(new { notificationId = notification.Id, notification.RecipientUserId,
                 notification.SourceEventId, notification.Type, notification.OrderId, notification.CreatedAt }, Json)
         });
+        if (e.EventType == "ordering.order-confirmed")
+        {
+            var recipient = await database.Users.Where(u => u.Id == order.UserId).Select(u => u.Email).SingleAsync(cancellationToken);
+            var d = EmailDelivery.Confirmation(order, e.EventId, recipient, now);
+            await database.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO notifications."EmailDeliveries"
+                    ("Id","SourceEventId","OrderId","RecipientUserId","RecipientEmail","FromEmail","Template","Subject","TextBody",
+                     "Provider","ProviderKey","MessageId","RequestHash","Status","CreatedAt","UpdatedAt","NextAttemptAt",
+                     "AttemptCount","AttemptsInCycle","ReviewRetryCount","OutcomeUncertain","LastErrorCode","LastFailureAt")
+                VALUES ({d.Id},{d.SourceEventId},{d.OrderId},{d.RecipientUserId},{d.RecipientEmail},{d.FromEmail},{d.Template},{d.Subject},{d.TextBody},
+                    {d.Provider},{d.ProviderKey},{d.MessageId},{d.RequestHash},{d.Status.ToString()},{now},{now},{now},0,0,0,false,{d.LastErrorCode},{d.LastFailureAt})
+                ON CONFLICT ("OrderId","Template") DO NOTHING
+                """, cancellationToken);
+        }
+
         inbox.Status = InboxStatus.Processed; inbox.ProcessedAt = now; inbox.AttemptCount = 1;
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

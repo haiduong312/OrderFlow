@@ -29,4 +29,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-022](0022-durable-user-notifications.md) | Order notification consumer, transactional inbox/effects/outbox, owner reads and commit-before-ACK |
 
+| [ADR-023](0023-order-confirmation-email-delivery.md) | Durable confirmation email snapshots, sending leases, provider capability/SMTP uncertainty and audited Admin retry |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

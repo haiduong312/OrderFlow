@@ -171,3 +171,7 @@ Migration **20261111044314_AddRefundRecovery** preserves existing compensation I
 ## Notifications — 23
 
 **20261112035709_AddNotifications** adds notifications.Notifications with recipient/source/type/order/created/read fields, unique event/type/recipient, owner/FK/time guards, own-list/unread indexes and immutable identity/read evidence. The notification consumer writes this row, ProcessedMessages and NotificationCreated outbox in one scoped transaction before broker ACK. Handled notification inbox rows cannot be rewritten/deleted through ordinary writes. No Outbox FK is required for incoming event identities. Destructive Down refuses evidence loss; migration adds an empty table and preserves existing order/event data. See [runbook](notifications.md).
+
+## Email delivery — 23 email slice
+
+**20261112082134_AddEmailDeliveries** adds notifications.EmailDeliveries and append-only EmailDeliveryRetries. Snapshots/keys/source/order/recipient identity, per-cycle/lifetime counters, leases/outcome/due/failure metadata and operator cycle audits are durable. Unique order/template and source/template/recipient plus immutable identity/Sent and audited-cycle guards protect recovery. Existing notification inbox rows/orders/outbox remain unchanged; old Processed confirmations are not backfilled. Sender network runs outside all business transactions. Destructive Down refuses evidence loss; see [email runbook](email-delivery.md).

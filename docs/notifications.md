@@ -1,6 +1,6 @@
 # Durable user notifications
 
-The RabbitMQ worker creates a local notification for the order owner from each supported order event. It commits Notification + consumer inbox + NotificationCreated outbox together, then ACKs the delivery. No email/realtime network call runs in that transaction. Broker confirms remain separate from this consumer's database completion.
+The RabbitMQ worker creates a local notification for the order owner from each supported order event. It commits Notification + consumer inbox + NotificationCreated outbox together, then ACKs the delivery. No email/realtime network call runs in that transaction. [Confirmation email](email-delivery.md) now adds a unique intention for confirmed events in the same transaction and sends separately. Broker confirms remain separate from this consumer's database completion.
 
 ## Enable locally
 

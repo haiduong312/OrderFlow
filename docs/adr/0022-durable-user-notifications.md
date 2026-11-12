@@ -1,6 +1,6 @@
 # ADR-022: Durable order notifications with a consumer inbox and commit-before-ACK
 
-Date: 2026-11-12. Status: Accepted. Extends ADR-021's independent-consumer boundary; implements milestone 23's local notification delivery as readable user Notifications.
+Date: 2026-11-12. Status: Accepted; optional confirmation-email scope extended by [ADR-023](0023-order-confirmation-email-delivery.md). Extends ADR-021's independent-consumer boundary; implements milestone 23's local notification delivery as readable user Notifications.
 
 ## Context
 

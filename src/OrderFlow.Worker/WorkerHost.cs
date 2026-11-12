@@ -2,6 +2,8 @@ using OrderFlow.Application.Persistence;
 using OrderFlow.Application.Modules.Ordering;
 using OrderFlow.Application.Modules.Payments;
 using OrderFlow.Application.Messaging;
+using OrderFlow.Application.Modules.Emails;
+using OrderFlow.Worker.Emails;
 using OrderFlow.Application.Modules.Notifications;
 using OrderFlow.Worker.Messaging;
 
@@ -21,6 +23,15 @@ public static class WorkerHost
             .ValidateOnStart();
         builder.Services.AddScoped<OrderExpiryProcessor>();
         builder.Services.AddSingleton<OrderExpiryIteration>();
+        if (builder.Configuration.GetValue("EmailSending:Enabled", false))
+        {
+            if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("Testing"))
+                throw new InvalidOperationException("Development SMTP email delivery is restricted to Development/Testing.");
+            var smtp = builder.Configuration.GetSection("EmailSending").Get<DevelopmentSmtpOptions>() ?? new(); smtp.Validate();
+            builder.Services.AddSingleton(smtp); builder.Services.AddSingleton<IEmailGateway, DevelopmentSmtpEmailGateway>();
+            builder.Services.AddSingleton<EmailSendingIteration>();
+            if (runBackgroundJobs) builder.Services.AddHostedService<EmailSendingWorker>();
+        }
         var publishEvents = builder.Configuration.GetValue("OutboxPublishing:Enabled", false);
         var notifications = builder.Configuration.GetValue("Notifications:Enabled", false);
         if (publishEvents || notifications)

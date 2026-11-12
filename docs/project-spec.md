@@ -152,6 +152,8 @@ All paths below are under `/api`. Browser POST/PUT/PATCH/DELETE endpoints, inclu
 | GET `/notifications/unread-count` | Authenticated | Own unread count |
 | GET `/notifications/{id}` | Owning authenticated user | Own notification detail; other/missing 404 |
 | POST `/notifications/{id}/read` | Owning authenticated user + CSRF | Empty body; idempotent first read timestamp; 200 |
+| GET `/admin/email-deliveries` | Admin | Bounded failed email metadata, no address/body |
+| POST `/admin/email-deliveries/{id}/retry` | Admin + CSRF | operationId/reason/risk acknowledgement; same identity, bounded new cycle |
 | GET `/admin/reports/sales` | Admin | UTC `[from,to)` range, daily USD sales, current order-state counts, projection checkpoint |
 | GET `/admin/operations/failures` | Admin | Bounded list of failed/quarantined jobs and sanitized error codes |
 | GET `/health/live` | Anonymous | Process liveness only; no sensitive detail |
@@ -268,3 +270,9 @@ The finite durable work/delay/retry/dead topology is available now; notification
 [ADR-022](adr/0022-durable-user-notifications.md) and [notification guide](notifications.md) implement v1 local notifications (the planned event/template/recipient delivery identity) as readable Notifications with unique source-event/type/recipient and created/read timestamps. One intended recipient is the authoritative order owner for each created/confirmed/cancelled/expired/processing/shipped/completed event. Consumer identity notifications.orders.v1 plus EventId independently deduplicates, with INSERT/constraint/row locking inside the same transaction as notification, handled inbox and NotificationCreated outbox. ACK occurs only after commit. No email/realtime network call occurs during that transaction.
 
 Only EnvelopeVersion 1 / SchemaVersion 1 is supported. Unsupported older/newer/missing versions, malformed/oversized/invalid UTF-8/duplicate-key JSON and failed identity/owner/history correlation follow finite notification delay/retry/DLQ; unknown types have no subscription. Historical supported events can arrive out of order without modifying order state or resetting read receipts. Authenticated APIs always scope to the current user, including Admin; browser read POST keeps antiforgery. NotificationCreated is a future realtime intention only. Historical Published backfill, audited replay, email, realtime/UI and reporting remain deferred.
+
+## Order-confirmation email extension — 23 email slice
+
+[ADR-023](adr/0023-order-confirmation-email-delivery.md) and [email guide/demo](email-delivery.md) extend the former local-only v1 scope at the explicit milestone request. The existing order-confirmed consumer now atomically inserts a unique EmailDelivery with recipient/template/body/server total snapshots and its handled inbox/notification/outbox. A separate optional sending worker claims/commits before SMTP or provider lookup; fenced acknowledgement and bounded attempts/backoff/review retain uncertainty. No email dependency enters checkout/payment transactions. Only the provided Development/Testing loopback `.invalid` sink is implemented; no production/customer email.
+
+Sent means gateway/server acceptance, not recipient read/delivery. Stable identity/provider key is reused for provider idempotency/lookup when supported; SMTP has neither, so send-before-local-ack crash recovery can duplicate mail. Admin failure metadata excludes sensitive snapshots; CSRF-protected audited retry preserves the original identity/key, is operation-idempotent, and requires duplicate-risk acknowledgement for uncertainty. Sent cannot be manually resent. Existing processed confirmation events are not automatically backfilled.

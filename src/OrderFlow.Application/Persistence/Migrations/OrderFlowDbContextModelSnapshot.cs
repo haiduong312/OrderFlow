@@ -446,6 +446,191 @@ namespace OrderFlow.Application.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("OrderFlow.Application.Modules.Emails.EmailDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("AttemptsInCycle")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FromEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset?>("LastFailureAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LeaseOwner")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("LeaseToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MessageId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("OutcomeUncertain")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ProviderKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("RecipientUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<int>("ReviewRetryCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("SentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("SourceEventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Template")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("TextBody")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LeaseExpiresAt")
+                        .HasDatabaseName("IX_Email_Lease")
+                        .HasFilter("\"Status\"='InFlight'");
+
+                    b.HasIndex("RecipientUserId");
+
+                    b.HasIndex("OrderId", "Template")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Email_Order_Template");
+
+                    b.HasIndex("Provider", "ProviderKey")
+                        .IsUnique();
+
+                    b.HasIndex("SourceEventId", "Template", "RecipientUserId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Email_Source_Template_Recipient");
+
+                    b.HasIndex("Status", "NextAttemptAt", "Id")
+                        .HasDatabaseName("IX_Email_Due");
+
+                    b.ToTable("EmailDeliveries", "notifications", t =>
+                        {
+                            t.HasCheckConstraint("CK_Email_Counts", "\"AttemptCount\">=0 AND \"AttemptsInCycle\" BETWEEN 0 AND 8 AND \"AttemptsInCycle\"<=\"AttemptCount\" AND \"ReviewRetryCount\">=0");
+
+                            t.HasCheckConstraint("CK_Email_Identity", "\"Id\" <> '00000000-0000-0000-0000-000000000000'::uuid AND \"SourceEventId\" <> '00000000-0000-0000-0000-000000000000'::uuid AND \"Template\"='order-confirmation:v1' AND length(\"ProviderKey\")>0 AND length(\"MessageId\")>0 AND octet_length(\"RequestHash\")=32");
+
+                            t.HasCheckConstraint("CK_Email_Lease", "(\"Status\"='InFlight' AND \"LeaseOwner\" IS NOT NULL AND \"LeaseToken\" IS NOT NULL AND \"LeaseExpiresAt\" IS NOT NULL AND isfinite(\"LeaseExpiresAt\") AND \"LeaseExpiresAt\">\"CreatedAt\" AND \"OutcomeUncertain\") OR (\"Status\"<>'InFlight' AND \"LeaseOwner\" IS NULL AND \"LeaseToken\" IS NULL AND \"LeaseExpiresAt\" IS NULL)");
+
+                            t.HasCheckConstraint("CK_Email_Sent", "(\"Status\"='Sent' AND \"SentAt\" IS NOT NULL AND isfinite(\"SentAt\") AND \"SentAt\">=\"CreatedAt\" AND NOT \"OutcomeUncertain\") OR (\"Status\"<>'Sent' AND \"SentAt\" IS NULL)");
+
+                            t.HasCheckConstraint("CK_Email_Status", "\"Status\" IN ('Pending','InFlight','Sent','NeedsReview')");
+
+                            t.HasCheckConstraint("CK_Email_Times", "isfinite(\"CreatedAt\") AND isfinite(\"UpdatedAt\") AND isfinite(\"NextAttemptAt\") AND \"UpdatedAt\">=\"CreatedAt\" AND \"NextAttemptAt\">=\"CreatedAt\" AND (\"LastFailureAt\" IS NULL OR (isfinite(\"LastFailureAt\") AND \"LastFailureAt\">=\"CreatedAt\"))");
+                        });
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Emails.EmailDeliveryRetry", b =>
+                {
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("AcknowledgeDuplicateRisk")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("CycleNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("DeliveryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("OperationId");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("DeliveryId", "CycleNumber")
+                        .IsUnique();
+
+                    b.ToTable("EmailDeliveryRetries", "notifications", t =>
+                        {
+                            t.HasCheckConstraint("CK_EmailRetry_Metadata", "\"CycleNumber\">0 AND length(btrim(\"Reason\")) BETWEEN 1 AND 300 AND isfinite(\"RequestedAt\") AND \"OperationId\" <> '00000000-0000-0000-0000-000000000000'::uuid");
+                        });
+                });
+
             modelBuilder.Entity("OrderFlow.Application.Modules.Identity.ApplicationUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1539,6 +1724,36 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Emails.EmailDelivery", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Modules.Ordering.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Emails.EmailDeliveryRetry", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Modules.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Emails.EmailDelivery", null)
+                        .WithMany()
+                        .HasForeignKey("DeliveryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OrderFlow.Application.Modules.Inventory.InventoryBalance", b =>

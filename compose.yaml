@@ -48,6 +48,28 @@ services:
       start_period: 10s
     stop_grace_period: 30s
 
+  mailpit:
+    profiles: ["dev", "email"]
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "0"
+      MP_IGNORE_DUPLICATE_IDS: "false"
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_QUIET: "true"
+    ports:
+      - "127.0.0.1:${ORDERFLOW_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${ORDERFLOW_MAIL_UI_PORT:-8025}:8025"
+    volumes:
+      - mailpit_data:/data
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    stop_grace_period: 10s
+
 secrets:
   rabbitmq_password:
     file: ${ORDERFLOW_RABBIT_PASSWORD_FILE:-./.local/rabbitmq-password}
@@ -55,5 +77,6 @@ secrets:
     file: ${ORDERFLOW_DB_PASSWORD_FILE:?Set ORDERFLOW_DB_PASSWORD_FILE to a private password file}
 
 volumes:
+  mailpit_data:
   rabbitmq_data:
   postgres_data:

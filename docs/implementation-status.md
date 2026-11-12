@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-12 (Asia/Ho_Chi_Minh). Current milestone: **23 — durable order notifications through RabbitMQ and owner-scoped APIs**. Notification/inbox/NotificationCreated outbox commit atomically before ACK; concurrent duplicates, bounded poison/retry/DLQ, scoped subscriptions and authenticated list/detail/unread/read are implemented. Email/realtime/UI, reporting, audited replay/backfill and deployment remain outside this milestone. Prior payment/refund and outbox publication behavior remains implemented.
+Updated: 2026-11-12 (Asia/Ho_Chi_Minh). Current milestone: **23 email slice — durable order-confirmation delivery and audited Admin retry**. The existing confirmation consumer creates immutable email intentions atomically with inbox/notification/outbox; a separate leased sender uses the gateway outside transactions. Local Mailpit, SMTP duplicate-risk evidence, bounded review/retry and an executable mail-outage/payment demo ship. Production/customer email, automatic historical backfill, realtime/UI, reporting and deployment remain outside this milestone.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -52,7 +52,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 20 | Browser session/CSRF flow, active catalog, cart and exact cents state | 05, 06, 07 | A03, A20 | Pending |
 | 21 | Checkout UI, pending key/body recovery, authoritative order/deadline/payment/cancel views | 18, 20 | A03, A20 | Pending |
 | 22 | Admin catalog/stock/order/fulfillment UI with state/version conflict handling | 09, 19, 20 | A20 | Pending |
-| 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Complete for requested durable notification scope: RabbitMQ inbox/effect/outbox transaction, owner APIs and finite failure path; email/realtime/UI and audited replay remain later |
+| 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Complete for requested notification + confirmation-email slices: durable RabbitMQ consumer/owner APIs, leased local SMTP sender and audited same-email retry; production mail/realtime/UI and general replay remain later |
 | 24 | Versioned reporting projection, daily winning sales, range/auth tests and report UI | 19, 20, 23 | A17, A18, A21 | Pending |
 | 25 | Reproducible API/client/worker/proxy local composition, migration command, runtime DB roles and readiness | 22, 24 | A01, A16, A22 | Pending |
 | 26 | Deployment hardening/shared protected Data Protection keys; multi-worker/crash/uncertain commit/stale lease fault suite; retry/no-network-in-transaction evidence | 04, 18, 23, 24, 25 | A02, A12, A17–A19, A22, A23 | Pending |
@@ -1195,3 +1195,80 @@ Notifications represent immutable event notices, not latest-state projections. O
 3. **Vì sao recipient/read không lấy từ request hoặc chỉ payload?** Cookie xác định người đọc; order owner/history trong DB xác nhận người nhận và event. Admin cũng không được đọc chéo qua endpoint này; CSRF vẫn cần cho POST.
 
 Suggested commit title (none supplied): `feat: add durable order notifications and owner-scoped APIs`.
+
+
+## Durable order-confirmation email — 23 email slice (2026-11-12)
+
+### Scope and decision
+
+The explicit request extends ADR-022/spec v1's former local-notification-only scope. This was reported before dependent behavior and recorded in [ADR-023](adr/0023-order-confirmation-email-delivery.md). Reuses the existing order-event consumer/inbox; adds confirmation intention and separate gateway sending, not a second generic bus/consumer framework. No production customer email, campaign/welcome/cancellation email, real payment provider, general refunds, realtime/UI, automatic historical backfill or general outbox replay is introduced.
+
+Repository instructions/spec/architecture/ADRs, clean initial Git status, current code/tests/locks and eleven existing migrations were inspected. SDK/package/lockfile pins remain unchanged. The .NET 10 cancellable SendMailAsync API and Mailpit official release/Docker/options/health contract were checked. Mailpit v1.33.1 was pulled and digest pinned; BCL SMTP is restricted to a Development/Testing loopback sink and `.invalid` recipients. No SMTP credentials or real customer email were added.
+
+### Acceptance delivered
+
+| Criterion | Behavior/evidence |
+| --- | --- |
+| Atomic intention/dedup | Existing confirmed-event transaction writes EmailDeliveries + handled consumer inbox + notification/NotificationCreated; concurrent same EventId and different source identities for same order/template retain one intention |
+| Stable snapshots | Source/order/owner, recipient/from/template/subject/plain-text/server USD total, MIME Message-ID, provider/key/request hash are immutable; changing account email cannot change the queued request |
+| Safe recipient | Stored owner/history correlation retained; invalid/missing email goes to review rather than failing event processing; local gateway rejects non-.invalid real addresses before network |
+| Claim/network/result boundary | One SKIP LOCKED row per short transaction, owner/token/60-second lease and conservative uncertainty, scope disposed before lookup/send; independent NOWAIT probes pass at both operations |
+| Durable bounded schedule | Pending/InFlight/Sent/NeedsReview, lifetime/cycle counters, due/failure/sent metadata, eight attempts/cycle/backoff, bounded exhausted-lease cleanup, 20/pass and cancellable polling |
+| Fenced completion | Conditional status/owner/token/unexpired lease update; expired owner cannot overwrite newer completion; lost local ACK leaves claim for recovery |
+| Capable provider recovery | Same key/body/digest for lookup/idempotent send; pending/rejected/correlation results respected, lost acceptance/local result recovered with one effective send in controlled provider |
+| SMTP uncertainty | Actual Mailpit acceptance followed by failed local Sent acknowledgement yields two accepted messages after same-identity lease recovery; stable Message-ID does not imply exactly-once |
+| Shutdown/concurrency | Separate scoped contexts, deterministic two-worker claim gate, accepted-provider TCS/cancellation leaves uncertainty and lease; no context sharing or immediate retry loop |
+| Admin metadata/retry | Server Admin policy/cookie/CSRF; metadata excludes address/subject/body/hash, retry locks delivery then audits operation/actor/reason/cycle/risk; replay idempotent, changed facts conflict, Sent/Pending/InFlight reject new retry |
+| Audited bounded cycle | Retry preserves ID/key/snapshots/lifetime count, resets only cycle attempts with matching immutable SQL audit; uncertain work requires risk acknowledgement; terminal Sent/identity/evidence cannot regress |
+| Mail outage demo | Actual sink stopped before checkout/payment, order 201/payment 202/confirmed capture+consumption continue, email Pending; restart/due time sends same intention to local sink |
+| Development Compose | Pinned Mailpit, loopback 1025/8025, persistent retained volume, quiet/version-check disabled/no relay; literal dedicated Compose profile healthy without bind-mount workaround |
+
+### Luồng chính (Vietnamese)
+
+Consumer order-confirmed lấy owner email và tổng tiền từ DB, chụp recipient/template/body và tạo EmailDelivery với ID/provider key/Message-ID cố định. INSERT ON CONFLICT theo order/template và unique constraints bảo vệ duplicate; intention commit cùng inbox, notification và outbox trước RabbitMQ ACK. Checkout/settlement không gọi SMTP. Event đã Processed từ trước milestone không tự tạo email ngược lại; không xóa/reset marker để backfill.
+
+Sender claim một email đến hạn bằng SKIP LOCKED, lưu owner/token/lease và tăng counters/uncertainty rồi commit, giải phóng scope. Ngoài transaction mới lookup/send qua gateway. Provider hỗ trợ idempotency/lookup dùng cùng key/hash; kết quả Pending không bị gửi mới mù quáng. SMTP không có hai capability này nên sau crash có thể gửi trùng. Transaction/UPDATE mới chỉ ghi kết quả nếu lease vẫn thuộc worker. Lỗi transient backoff, permanent/exhausted chuyển NeedsReview; shutdown/unknown error giữ claim có thể phục hồi.
+
+Admin đọc metadata an toàn rồi retry sau khi kiểm tra nguyên nhân. Command có operationId và audit, cần CSRF và acknowledgement khi có duplicate risk. Nó không tạo EmailDelivery/key mới hay sửa snapshot; chỉ mở một chu kỳ tối đa tám lượt. Replay cùng operation không reschedule; Sent không cho phép gửi lại bằng operation mới. Sent chỉ nghĩa provider/sink đã nhận handoff, không chứng minh người dùng nhận/đọc thư.
+
+### Important files and migration
+
+- Modules/Emails/EmailDelivery, IEmailGateway, EmailSendingIteration, EmailAdministration: snapshots/request hash/capability contract, three-phase claim/network/fenced result and safe operator metadata/retry.
+- Existing NotificationProcessor now creates only confirmation email intentions in its atomic transaction; other order/payment use cases are unchanged.
+- Worker/Emails/DevelopmentSmtpEmailGateway, EmailSendingWorker; WorkerHost/appsettings: opt-in Development/Testing/local-only SMTP, bounded asynchronous budgets/batches and independent scopes.
+- Api/Emails/AdminEmailDeliveriesController + Program: Admin-only no-store metadata and CSRF retry API, no sensitive message DTO/mark-Sent endpoint.
+- Migration **20261112082134_AddEmailDeliveries**, designer/snapshot, EmailDeliveryConfiguration and DbContext: additive EmailDeliveries/EmailDeliveryRetries, unique/FK/time/state/counter/lease checks, immutable request/Sent/audit guards and audited cycle resets. Down refuses evidence loss. Migration count 11 -> 12; no developer DB applied/reset.
+- Compose Mailpit + .env.example; dedicated Email test collection/Mailpit fixture, controlled provider, EmailDelivery/Admin/Composition/ServiceOutage tests and snapshot/recipient unit tests.
+- [Email runbook/demo](email-delivery.md), [ADR-023](adr/0023-order-confirmation-email-delivery.md), current spec/architecture/persistence/testing/notification/README and this status.
+
+### Exact checks and evidence
+
+All .NET commands use DOTNET_CLI_HOME=/tmp/orderflow-callbacks/dotnet-home and NUGET_PACKAGES=/tmp/orderflow-callbacks/packages, matching pinned SDK 10.0.115. Logs/TRX/SQL/artifacts are outside the repository under /tmp/orderflow-email. No package/lockfile/SDK changes, production customer messages/funds, fake PostgreSQL fallback or developer DB migration/reset.
+
+1. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-email/artifacts --disable-parallel -m:1` — exit 0/all six projects with auditing; `/tmp/orderflow-email-restore.log`.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-email/artifacts -m:1` — final exit 0, **0 warnings/errors**; `/tmp/orderflow-email-build-final.log`.
+3. `dotnet ef migrations add AddEmailDeliveries --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output-dir Persistence/Migrations` with matching ArtifactsPath/design-only connection — exit 0; `/tmp/orderflow-email-migration.log`. Reviewed generated additive DDL and added immutable request/Sent/owner/history/audit/cycle guards and forward-only retention. Actual Up is exercised by owned test databases; no merchant developer database updated.
+4. Initial focused `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-email/artifacts -m:1 --filter 'FullyQualifiedName~Email' --logger 'trx;LogFilePrefix=email-focused' --results-directory /tmp/orderflow-email/results` passed 17/18 integration + five unit; outage fixture retained the pre-restart randomly mapped Docker SMTP port. Production Compose uses fixed host port; fixture refreshes endpoint after restart. `... --filter 'FullyQualifiedName~EmailServiceOutageTests' --logger 'trx;LogFilePrefix=email-outage' ...` then passed its **one real outage/payment case**; UnitTests has no matching case, not a fallback/skip. Logs `/tmp/orderflow-email-focused.log` and `...-outage.log`.
+5. Expanded focused run `... --filter 'FullyQualifiedName~Email' --logger 'trx;LogFilePrefix=email-expanded' ...` passed 20/21 integration + five unit; the duplicate test was reading Mailpit search `total` (entire sink) instead of filtered `messages_count`. Verified the actual API using two synthetic `.invalid` messages in dedicated Compose: total=2, filtered count=1; corrected fixture count. No application behavior/failure was hidden. Final full focused command with `--logger 'trx;LogFilePrefix=email-focused-final'` — exit 0, **21 integration + five unit passed**, no failed/skipped; `/tmp/orderflow-email-focused-final.log` and TRX `email-focused-final_net10.0_20261112154355.trx` / `...154356.trx`.
+6. Full `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-email/artifacts -m:1 --logger 'trx;LogFilePrefix=email-full' --results-directory /tmp/orderflow-email/results` — exit 0, **401 integration + 155 unit = 556 passed**, **0 failed/skipped**, integration duration **4m2s**. Baseline 530; adds **19 PostgreSQL/Mailpit cases**, **one PostgreSQL/Admin HTTP case**, **one composition case** and **five snapshot/recipient unit cases**. Includes all original payment/order/stock/cookie/CSRF/broker/notification regressions and the actual mail-off demo. Evidence `/tmp/orderflow-email-full.log`; TRX `email-full_net10.0_20261112155128.trx` and `email-full_net10.0_20261112155129.trx`. No production/test code changed after this run.
+7. `dotnet ef migrations has-pending-model-changes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` with ArtifactsPath=/tmp/orderflow-email/artifacts and nonconnecting design connection — exit 0, **no model drift**, `/tmp/orderflow-email-drift.log`. `dotnet ef migrations script --idempotent --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output /tmp/orderflow-email/migrations.sql` — exit 0; reviewed additive table/unique/constraint/audit retention SQL; `/tmp/orderflow-email-script.log`.
+8. Pulled official `axllent/mailpit:v1.33.1` and pinned digest sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce; `/tmp/orderflow-email-image.log`. Literal committed Compose profile `config --quiet` and dedicated project `up -d --wait --wait-timeout 60 mailpit` — exit 0/**healthy**, no daemon bind workaround needed. Verification used loopback ports 11027/18027; no relay/auth secrets. Only synthetic `.invalid` probe messages were sent. `down` without --volumes removed only verification container/network; inspected retained `orderflow-email-check_mailpit_data` volume. Logs `/tmp/orderflow-email-compose.log` and `...-compose-down.log`.
+9. `git diff --check` — exit 0. Documentation/Worker JSON checker validated local targets/fences/config; final Git diff reviewed, no generated artifacts/private credentials included. No commit/push/deploy.
+
+Unverified: real production email provider/recipient delivery/read, durable provider store across provider OS restarts, independent OS-kill/network partition/uncertain SQL commit, TLS/runtime roles/cluster failover, automatic historical backfill/snapshot repair and general replay. SMTP duplicate acceptance and stopped-service recovery are real sink tests; provider one-effective-send is conditional on the controlled fake's key/store contract within test lifetime, not universal exactly-once delivery.
+
+### Manual demo / operational limits
+
+Follow [email guide](email-delivery.md): explicitly migrate, start Mailpit, privately configure DB/RabbitMQ/payment simulator, enable Notifications/OutboxPublishing/EmailSending plus payment workers, then stop only mailpit. Authenticated checkout/payment continue and order confirms; inspect Pending email/backoff. Start mailpit, await due time, inspect same ID/key Sent and synthetic message. Executable demo command: `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --filter 'FullyQualifiedName~EmailServiceOutageTests'`.
+
+SMTP can duplicate accepted mail after a crash/timeout/lost local acknowledgement; actual duplicate sink messages were tested. One-effective-send claims apply only to the controllable provider's advertised idempotency/lookup contract within its test-store lifetime, not production/provider restarts. A production provider must durably bind key/request/result through the full recovery window. Lookup-only Absent after uncertainty stays review; no unsafe inference cancels a stale in-flight call.
+
+Existing already-Processed confirmations are not backfilled; blank/invalid immutable recipient may need a reviewed future repair rather than blind retry. No production mail adapter, full customer-email flow, recipient read/delivery tracking, mail authentication/TLS, general replay/UI, archival, independent OS-kill/network-partition/uncertain PostgreSQL commit or cluster HA is claimed. No real customer messages/funds, user data deletion, developer volume reset or commit/push/deploy.
+
+### Three interview questions
+
+1. **Vì sao email intention commit cùng inbox nhưng gửi riêng?** Hiểu duplicate/crash không mất intention, SMTP không giữ business locks và mail outage không làm checkout/settlement thất bại.
+2. **Stable key/lease có bảo đảm SMTP exactly once không?** Không: lease chặn local stale ACK, stable key cần provider hỗ trợ mới dedup; Message-ID tự nó không ngăn thư trùng.
+3. **Vì sao Admin retry không tạo key mới hay sửa recipient?** Hiểu giữ cùng external operation để reconcile uncertainty, immutable snapshot, audit/risk acknowledgement và bounded new cycle; Sent không được resend.
+
+Suggested commit title (none supplied): `feat: add durable order-confirmation email delivery and recovery`.

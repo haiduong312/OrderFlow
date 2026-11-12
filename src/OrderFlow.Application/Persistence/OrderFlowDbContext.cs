@@ -6,6 +6,7 @@ using OrderFlow.Application.Common.Money;
 using OrderFlow.Application.Common.Time;
 using OrderFlow.Application.Messaging;
 using OrderFlow.Application.Modules.Identity;
+using OrderFlow.Application.Modules.Emails;
 using OrderFlow.Application.Modules.Notifications;
 using OrderFlow.Application.Modules.Catalog;
 using OrderFlow.Application.Modules.Inventory;
@@ -18,6 +19,8 @@ namespace OrderFlow.Application.Persistence;
 public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options)
 {
+    public DbSet<EmailDelivery> EmailDeliveries => Set<EmailDelivery>();
+    public DbSet<EmailDeliveryRetry> EmailDeliveryRetries => Set<EmailDeliveryRetry>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<PaymentAttempt> PaymentAttempts => Set<PaymentAttempt>();
     public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
@@ -51,6 +54,8 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.ApplyConfiguration(new EmailDeliveryConfiguration());
+        builder.ApplyConfiguration(new EmailDeliveryRetryConfiguration());
         builder.ApplyConfiguration(new NotificationConfiguration());
         builder.ApplyConfiguration(new PaymentAttemptConfiguration());
         builder.ApplyConfiguration(new PaymentEventConfiguration());
