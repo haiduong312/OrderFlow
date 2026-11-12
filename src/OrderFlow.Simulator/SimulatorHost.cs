@@ -51,7 +51,7 @@ public static class SimulatorHost
         app.UseExceptionHandler(handler => handler.Run(async context =>
         {
             var error = context.Features.Get<IExceptionHandlerFeature>()?.Error;
-            context.Response.StatusCode = error switch { SimulatorConflictException => 409, ArgumentException or JsonException => 400,
+            context.Response.StatusCode = error switch { SimulatorConflictException => 409, SimulatorRefundRejectedException => 422, ArgumentException or JsonException => 400,
                 BadHttpRequestException bad when bad.StatusCode is >= 400 and < 500 => bad.StatusCode, _ => 500 };
             await context.Response.WriteAsJsonAsync(new { code = context.Response.StatusCode switch
                 { 409 => "provider_idempotency_conflict", 400 => "invalid_request", _ => "simulator_error" } }, context.RequestAborted);
@@ -80,14 +80,23 @@ public static class SimulatorHost
         });
         app.MapGet("/provider/payments/{key}", async (string key, SimulatorService service, CancellationToken token) =>
             await service.LookupAsync(key, token) is { } payment ? Results.Json(payment.View(), GatewayJson.Options) : Results.NotFound());
-        app.MapPost("/provider/refunds", async (GatewayRefundRequest request, SimulatorService service, CancellationToken token) =>
-            Results.Json(await service.RefundAsync(request, token), GatewayJson.Options));
+        app.MapPost("/provider/refunds", async (GatewayRefundRequest request, SimulatorService service, HttpContext context) =>
+        {
+            var result = await service.SubmitRefundAsync(request, context.RequestAborted);
+            if (result.LoseResponse) await Task.Delay(Timeout.InfiniteTimeSpan, context.RequestAborted);
+            return Results.Json(result.Result, GatewayJson.Options);
+        });
         app.MapGet("/provider/refunds/{key}", async (string key, SimulatorService service, CancellationToken token) =>
             await service.LookupRefundAsync(key, token) is { } refund ? Results.Json(refund.View(), GatewayJson.Options) : Results.NotFound());
         app.MapPut("/control/payments/{key}/scenario", async (string key, ScenarioControl request, SimulatorService service, CancellationToken token) =>
         {
             if (!Enum.GetNames<SimulatorScenario>().Contains(request.Scenario, StringComparer.Ordinal)) return Results.BadRequest();
             await service.SetScenarioAsync(key, Enum.Parse<SimulatorScenario>(request.Scenario), token); return Results.NoContent();
+        });
+        app.MapPut("/control/refunds/{key}/scenario", async (string key, ScenarioControl request, SimulatorService service, CancellationToken token) =>
+        {
+            if (!Enum.GetNames<SimulatorRefundScenario>().Contains(request.Scenario, StringComparer.Ordinal)) return Results.BadRequest();
+            await service.SetRefundScenarioAsync(key, Enum.Parse<SimulatorRefundScenario>(request.Scenario), token); return Results.NoContent();
         });
         app.MapPost("/control/payments/{key}/resolve", async (string key, StateControl request, SimulatorService service, CancellationToken token) =>
         {

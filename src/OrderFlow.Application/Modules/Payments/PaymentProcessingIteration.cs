@@ -32,7 +32,7 @@ public sealed class PaymentProcessingIteration(IServiceScopeFactory scopes, IPay
             await transaction.CommitAsync(cancellationToken);
         }
 
-        GatewayPaymentResult? observation = null; string? error = null;
+        GatewayPaymentResult? observation = null; string? error = null; var retryable = true;
         try
         {
             if (claimed.Status != PaymentAttemptStatus.Queued)
@@ -41,7 +41,7 @@ public sealed class PaymentProcessingIteration(IServiceScopeFactory scopes, IPay
         }
         catch (GatewayUnavailableException failure)
         {
-            error = failure.Code;
+            error = failure.Code; retryable = failure.Retryable;
             logger.LogWarning(new EventId(1502, "PaymentGatewayUncertain"), "Gateway result uncertain for attempt {AttemptId}: {Code}", claimed.Id, error);
         }
 
@@ -56,7 +56,8 @@ public sealed class PaymentProcessingIteration(IServiceScopeFactory scopes, IPay
             // Fence completion by token, including an expired/reclaimed lease. A stale process
             // cannot overwrite observations stored by a newer owner. Provider keys fence money.
             if (attempt.LeaseToken != token) return true;
-            attempt.Observe(observation, error, BusinessTime.GetUtcNow(clock));
+            if (!retryable) attempt.RequireReview(error!, BusinessTime.GetUtcNow(clock));
+            else attempt.Observe(observation, error, BusinessTime.GetUtcNow(clock));
             await database.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             if (attempt.NeedsAttention)

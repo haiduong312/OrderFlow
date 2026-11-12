@@ -95,7 +95,7 @@ public sealed class PaymentCallbackTests(PostgresServer server) : PostgresTest(s
         {
             var refund = await read.PaymentRefunds.SingleAsync();
             Assert.Equal(capture.Id, refund.CaptureId); Assert.Equal(capture.Amount, refund.Amount);
-            Assert.Equal("RefundPending", refund.Status);
+            Assert.Equal(PaymentRefundStatus.Pending, refund.Status);
         }
         Assert.Equal(PaymentAttemptStatus.Captured, (await read.PaymentAttempts.SingleAsync()).Status);
     }

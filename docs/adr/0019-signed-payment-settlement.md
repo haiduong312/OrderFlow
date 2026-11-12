@@ -2,6 +2,8 @@
 
 Date: 2026-11-11. Status: Accepted. Extends ADR-003/005/018. Delivers roadmap 17 and confirmation/compensation-intention slice of 18. Refund submission/reconciliation remains deferred.
 
+Extended by [ADR-020](0020-refund-execution-and-payment-reconciliation.md): refund execution and authenticated lookup now use the shared settlement path; callback signature/receipt guarantees remain unchanged.
+
 ## Decision
 
 Expose only POST `/api/payments/simulator/callback`, with explicit browser antiforgery exemption because dedicated provider HMAC authenticates it. Enable receipt explicitly with PaymentCallbacks:Enabled and inject a 32–512 character Secret plus KeyId, matching the simulator signing credential. The signing input remains the exact ASCII delivery timestamp, `.` and unmodified request body bytes. Require one key/timestamp/signature header, canonical nonnegative Unix seconds, a 32-byte hex HMAC-SHA256 and at most five minutes skew using TimeProvider; exact boundary is allowed. Use fixed-time comparison. Bound unknown-length as well as declared-length bodies to 64 KiB before authentication/deserialization, reject encoded bodies, missing/duplicate/unknown JSON properties and unsupported schema/state shapes. Cookies/roles cannot authorize this route. No signing material or payload is logged.

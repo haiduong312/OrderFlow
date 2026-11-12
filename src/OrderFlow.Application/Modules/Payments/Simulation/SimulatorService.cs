@@ -7,6 +7,8 @@ using OrderFlow.Application.Modules.Ordering;
 namespace OrderFlow.Application.Modules.Payments.Simulation;
 
 public sealed record SimulatorSubmission(GatewayPaymentResult? Result, bool LoseResponse);
+public sealed record SimulatorRefundSubmission(GatewayRefundResult? Result, bool LoseResponse);
+public sealed class SimulatorRefundRejectedException : Exception;
 
 public sealed class SimulatorService(OrderFlowDbContext database, TimeProvider clock)
 {
@@ -72,6 +74,33 @@ public sealed class SimulatorService(OrderFlowDbContext database, TimeProvider c
         if (payment is null) return false;
         payment.Resolve(state, BusinessTime.GetUtcNow(clock));
         await database.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken); return true;
+    }
+
+    public async Task SetRefundScenarioAsync(string key, SimulatorRefundScenario scenario, CancellationToken cancellationToken)
+    {
+        ValidateKey(key);
+        if (!Enum.IsDefined(scenario)) throw new ArgumentException("Invalid refund scenario.");
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await OrderDatabase.SetTimeoutsAsync(database, cancellationToken);
+        await LockAsync("provider-refund-key/" + key, cancellationToken);
+        if (await database.ProviderRefunds.AnyAsync(r => r.RequestKey == key, cancellationToken)) throw new SimulatorConflictException();
+        var control = await database.ProviderRefundScenarios.SingleOrDefaultAsync(s => s.RequestKey == key, cancellationToken);
+        if (control is null) database.ProviderRefundScenarios.Add(new() { RequestKey = key, Scenario = scenario });
+        else control.Scenario = scenario;
+        await database.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<SimulatorRefundSubmission> SubmitRefundAsync(GatewayRefundRequest request, CancellationToken cancellationToken)
+    {
+        // An existing committed effect always wins over transport scenario controls.
+        if (await database.ProviderRefunds.AsNoTracking().AnyAsync(r => r.RequestKey == request.RequestKey, cancellationToken))
+            return new(await RefundAsync(request, cancellationToken), false);
+        var scenario = await database.ProviderRefundScenarios.AsNoTracking().Where(s => s.RequestKey == request.RequestKey)
+            .Select(s => (SimulatorRefundScenario?)s.Scenario).SingleOrDefaultAsync(cancellationToken) ?? SimulatorRefundScenario.Succeeded;
+        if (scenario == SimulatorRefundScenario.TimeoutBeforeAccept) return new(null, true);
+        if (scenario == SimulatorRefundScenario.Rejected) throw new SimulatorRefundRejectedException();
+        var result = await RefundAsync(request, cancellationToken); // independent provider commit before losing HTTP response
+        return new(result, scenario == SimulatorRefundScenario.TimeoutAfterSuccess);
     }
 
     public async Task<GatewayRefundResult> RefundAsync(GatewayRefundRequest request, CancellationToken cancellationToken)

@@ -86,11 +86,10 @@ Consumed and Released are terminal. Exactly one reservation exists per `(orderId
 | Attempt: Unknown | Pending / Failed / Captured | Query provider using the original attempt key; never create a replacement merely on timeout |
 | Attempt: Failed | Captured | A later verified capture overrides a failure observation; apply confirmation/refund rules, never discard captured funds |
 | Attempt: Captured | Captured | Monotonic capture evidence; delayed failure cannot overwrite it |
-| Refund: None | Pending | Persist full-refund intention for an ineligible/surplus capture |
-| Refund: Pending | Unknown / Failed / Succeeded | Submit/query result; timeout is Unknown, permanent rejection is Failed |
-| Refund: Unknown | Pending / Failed / Succeeded | Reconcile by the same refund key |
-| Refund: Failed | Pending / Succeeded | Explicit operator retry with same identity, or verified later success |
-| Refund: Succeeded | Succeeded | Duplicate observation; no second refund |
+| Refund: None | Pending | Persist full-compensation intention with immutable provider capture/key |
+| Refund: Pending | Pending / Succeeded / NeedsReview | Backoff for uncertain delivery, validated provider success, or permanent/exhausted/mismatched outcome |
+| Refund: Succeeded | Succeeded | Terminal financial fact; duplicate lookup cannot create another refund |
+| Refund: NeedsReview | NeedsReview | Explicit operator investigation using the original key; audited replay tooling is deferred |
 
 Lease ownership/attempt counters are separate delivery metadata, not payment facts. Only one Queued/Pending/Unknown attempt per order may exist. Creating a payment while one exists returns that attempt (202); after definitive failure, a new attempt is allowed before expiry. An already paid/terminal order rejects new attempts with 409. For a request arriving after expiry, commit expiry and return 409. All attempts use the order's authoritative immutable total, never browser amounts.
 
@@ -246,3 +245,7 @@ The separate Worker now finalizes due PendingPayment orders with one SKIP LOCKED
 ## Signed receipt and capture settlement implementation (17 / allocation slice of 18)
 
 [ADR-019](adr/0019-signed-payment-settlement.md) and [callback guide](payment-callbacks.md) implement the callback and capture allocation/compensation-intention contracts above. Callback 202 means durable PaymentEvents + inbox acceptance, not confirmation. Database settlement samples DecisionAt after the order lock; provider OccurredAt and HTTP ReceivedAt never extend eligibility. Positive known USD amount mismatches are captured/refunded in full, unknown/mismatched references and unsupported currency are quarantined. Reservation consumption, monotonic Captured facts, unique compensation and deferred SQL disposition guards now ship; merchant refund delivery/reconciliation, generic dispatch and simulator callback scheduling remain deferred.
+
+## Durable recovery implementation (18 completion)
+
+[ADR-020](adr/0020-refund-execution-and-payment-reconciliation.md) and [recovery guide](payment-recovery.md) implement full-compensation execution and payment status reconciliation through the gateway. Refund Pending includes uncertain delivery with durable backoff/error, Succeeded is terminal, and NeedsReview stops unresolved/rejected work after bounded delivery; this replaces the earlier planned separate Unknown/Failed refund states. Claim/commit -> lookup/refund outside transaction -> token-fenced result persistence uses stable provider identities. Reconciliation invokes the exact same order-first PaymentSettlement as callbacks and never bypasses stored ownership/amount/currency/attempt correlation or expiry. Lookup captures explicitly have Source=ProviderLookup and no invented provider event/occurrence time. No general customer refunds/returns or generic outbox dispatch is added. External safety requires provider idempotency, capture uniqueness, durable lookup and identity retention; no universal exactly-once external guarantee is claimed.

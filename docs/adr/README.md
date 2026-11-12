@@ -25,4 +25,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-019](0019-signed-payment-settlement.md) | Signed raw-byte callback receipts, monotonic captures, atomic consumption/confirmation and unique compensation intentions |
 
+| [ADR-020](0020-refund-execution-and-payment-reconciliation.md) | Durable full-compensation execution, lookup settlement, shared lease fencing and provider-dependent recovery guarantees |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

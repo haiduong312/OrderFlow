@@ -14,14 +14,15 @@ public interface IPaymentGateway
 {
     Task<GatewayPaymentResult> SubmitAsync(GatewayPaymentRequest request, CancellationToken cancellationToken);
     Task<GatewayPaymentResult?> LookupAsync(string requestKey, CancellationToken cancellationToken);
-    // Provider refund contract; merchant intention delivery/reconciliation remains a later milestone.
+    // Lookup is by the original immutable provider key; refund success must be durable/idempotent by key and capture.
     Task<GatewayRefundResult> RefundAsync(GatewayRefundRequest request, CancellationToken cancellationToken);
     Task<GatewayRefundResult?> LookupRefundAsync(string requestKey, CancellationToken cancellationToken);
 }
 
-public sealed class GatewayUnavailableException(string code) : Exception("The gateway result is uncertain.")
+public sealed class GatewayUnavailableException(string code, bool retryable = true) : Exception("The gateway result is uncertain.")
 {
     public string Code { get; } = code;
+    public bool Retryable { get; } = retryable;
 }
 
 public static class GatewayJson

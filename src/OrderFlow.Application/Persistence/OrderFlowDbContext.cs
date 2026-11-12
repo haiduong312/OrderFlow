@@ -24,6 +24,7 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
     public DbSet<ProviderPayment> ProviderPayments => Set<ProviderPayment>();
     public DbSet<ProviderScenario> ProviderScenarios => Set<ProviderScenario>();
     public DbSet<ProviderRefund> ProviderRefunds => Set<ProviderRefund>();
+    public DbSet<ProviderRefundScenario> ProviderRefundScenarios => Set<ProviderRefundScenario>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
@@ -55,6 +56,7 @@ public class OrderFlowDbContext(DbContextOptions<OrderFlowDbContext> options)
         builder.ApplyConfiguration(new ProviderPaymentConfiguration());
         builder.ApplyConfiguration(new ProviderScenarioConfiguration());
         builder.ApplyConfiguration(new ProviderRefundConfiguration());
+        builder.ApplyConfiguration(new ProviderRefundScenarioConfiguration());
         builder.HasDefaultSchema("identity");
         builder.Entity<ApplicationUser>().ToTable("Users", "identity", table =>
             table.HasCheckConstraint("CK_Users_CreatedAt", "isfinite(\"CreatedAt\")"));

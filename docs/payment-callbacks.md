@@ -1,6 +1,6 @@
 # Signed payment callbacks and atomic settlement
 
-Current scope: roadmap 17 plus capture allocation/compensation intentions from 18. See [ADR-019](adr/0019-signed-payment-settlement.md), [provider setup](payments.md), [specification](project-spec.md) and [verification evidence](implementation-status.md). Refund delivery/reconciliation and generic outbox dispatch are still pending.
+Current scope: roadmap 17 plus capture allocation/compensation intentions from 18. See [ADR-019](adr/0019-signed-payment-settlement.md), [provider setup](payments.md), [specification](project-spec.md) and [verification evidence](implementation-status.md). Refund execution/reconciliation now ship with [ADR-020](adr/0020-refund-execution-and-payment-reconciliation.md) / [recovery guide](payment-recovery.md); generic outbox dispatch remains pending.
 
 ## HTTP authentication and durable receipt
 
@@ -41,14 +41,14 @@ Worker reads due Pending receipts/inboxes, opens a fresh scoped transaction, loc
 | Verified fact / locked order | Atomic result |
 | --- | --- |
 | Exact USD capture, PendingPayment, DecisionAt < ExpiresAt | Captured attempt + allocated capture; Active reservations become Consumed; OnHand/Reserved decrease; Confirmed + System history; capture/confirmation outbox; processed inbox |
-| Due PendingPayment (equality included) | Expired + release only Active reservations + System history/outbox; captured funds recorded; one RefundPending |
-| Cancelled/Expired/already paid or another winning capture | No resurrection/second consumption; capture + one RefundPending |
-| Known USD capture, wrong amount, before expiry | Capture actual amount + full RefundPending; order remains pending, reservations unchanged; new eligible attempt may be created |
+| Due PendingPayment (equality included) | Expired + release only Active reservations + System history/outbox; captured funds recorded; one Pending compensation |
+| Cancelled/Expired/already paid or another winning capture | No resurrection/second consumption; capture + one Pending compensation |
+| Known USD capture, wrong amount, before expiry | Capture actual amount + full Pending compensation; order remains pending, reservations unchanged; new eligible attempt may be created |
 | Unknown/mismatched reference/transaction/capture, non-USD, non-capture amount mismatch | Quarantined authenticated observation + failed inbox; no confirmation or guessed refund |
 | Duplicate capture under another event ID | No second capture/refund/consumption; overdue pending expiry can still finalize |
 | Delayed failure/Pending after Captured | No regression of financial/fulfillment facts |
 
-One allocated capture/order and one compensation/provider capture are protected by unique indexes. Deferred SQL constraints reject commits with unallocated captures lacking full matching compensation. RefundPending is only an intention: there is no merchant refund HTTP worker in this milestone. Submission/lookup results never confirm orders; callbacks clear its lease token, fencing late responses. Browser initiation replay still returns original 202 bytes; GET attempt/order supplies current state.
+One allocated capture/order and one compensation/provider capture are protected by unique indexes. Deferred SQL constraints reject commits with unallocated captures lacking full matching compensation. Refund intentions are now Pending/Succeeded/NeedsReview and executed by the separate opt-in RefundWorker; see the recovery guide. Submission/lookup results never confirm orders; callbacks clear its lease token, fencing late responses. Browser initiation replay still returns original 202 bytes; GET attempt/order supplies current state.
 
 Settlement polls up to 20 sequential events per pass, five seconds between passes, fresh scope per event. This local database consumer keeps effects and inbox completion in one transaction without a network lease. Known SQL contention rolls back first, schedules a durable retry five seconds later, and stops automatic retries after eight failures with a Failed inbox. Unknown errors propagate/stop the host visibly. Inspect PaymentEvents.Status/ErrorCode and ProcessedMessages.Status/AttemptCount/LastErrorCode for backlog/failure; audited replay tooling is deferred. Logs contain IDs/codes, never secrets/signatures/raw bodies.
 
@@ -86,7 +86,7 @@ PY
 ```
 
 5. GET owner order/attempt: eventually Confirmed/Captured with one consumption per reservation. Redeliver the envelope within its signature window: 202, same capture and no extra stock effect. Beyond five minutes obtain a refreshed envelope.
-6. For late capture, cancel first or let expiry finalize, then deliver a signed success: order stays terminal, OnHand stays unchanged by payment, Reserved is released once, and PaymentCaptures has matching RefundPending. No real refund is sent.
+6. For late capture, cancel first or let expiry finalize, then deliver a signed success: order stays terminal, OnHand stays unchanged by payment, Reserved is released once, and PaymentCaptures has matching Pending compensation. With RefundProcessing enabled, the simulator processes the full compensation by its original key; no real money provider is used.
 7. Edit Body without a fresh signature: 401. To test authenticated amount mismatch use simulator MismatchedAmount; it cannot confirm and creates full compensation for the observed USD amount.
 
 Focused automated checks (Docker/Testcontainers or private actual ORDERFLOW_TEST_POSTGRES required for PostgreSQL):
@@ -98,4 +98,6 @@ dotnet test OrderFlow.slnx -c Release --no-build --no-restore --filter 'Category
 
 Race gates count independent contexts before their contested Order SQL or receipt INSERT. One-way lock arrival/pause signals plus logical time test deadlines; no real sleeps prove concurrency. Fresh-context assertions reconcile ledger/balances/reservations/captures/refunds. Fault injection verifies receipt/inbox atomicity and rollback after actual consumption SQL when mandatory outbox fails. SQL tests cover immutable evidence, terminal disposition and missing compensation.
 
-Limits: no scheduled simulator callback delivery, merchant refund submission/reconciliation, general outbox dispatcher, operator replay UI, real provider or production-readiness claim. Durable backlog is safe but delays allocation; hosts require synchronized UTC. No exactly-once external side-effect guarantee.
+Limits: no scheduled simulator callback delivery, general outbox dispatcher, operator replay UI, real provider or production-readiness claim. Durable backlog is safe but delays allocation; hosts require synchronized UTC. No exactly-once external side-effect guarantee.
+
+ADR-020 extends evidence provenance: authenticated gateway lookup now shares PaymentSettlement; captures first observed by lookup have Source=ProviderLookup and null provider event/occurrence, while a later callback remains a separate authenticated receipt without creating another capture/refund. The signature protocol is unchanged.

@@ -29,6 +29,50 @@ public sealed class PaymentAttempt
     public string? ProviderCaptureId { get; private set; }
     public GatewayPaymentState? ObservedState { get; private set; }
     public string? LastObservation { get; private set; }
+    public DateTimeOffset? ReconciledAt { get; private set; }
+
+    public Guid ClaimReconciliation(DateTimeOffset now)
+    {
+        if (NeedsAttention && LastErrorCode is not ("settlement_pending" or "gateway_response_mismatch"))
+            throw new InvalidOperationException("A manual-review attempt cannot be automatically reconciled.");
+        if (Status is PaymentAttemptStatus.Failed or PaymentAttemptStatus.Captured || DeliveryCount >= 8
+            || NextAttemptAt > now || LeaseExpiresAt > now)
+            throw new InvalidOperationException("The payment attempt is not reconcilable.");
+        LeaseToken = Guid.NewGuid(); LeaseExpiresAt = now.AddSeconds(60); DeliveryCount++; UpdatedAt = now;
+        if (DeliveryCount == 8) { NeedsAttention = true; LastErrorCode = "reconciliation_exhausted"; }
+        return LeaseToken.Value;
+    }
+
+    public void RememberLookup(GatewayPaymentResult result, DateTimeOffset now)
+    {
+        if (LeaseToken is null) throw new InvalidOperationException("Lookup observation requires the current lease.");
+        LastObservation = JsonSerializer.Serialize(result, GatewayJson.Options);
+        ReconciledAt = now;
+    }
+
+    public void CompleteLookup(DateTimeOffset now)
+    {
+        UpdatedAt = now > UpdatedAt ? now : UpdatedAt;
+        NextAttemptAt = UpdatedAt.Add(PaymentRetry.Delay(DeliveryCount));
+        LeaseToken = null; LeaseExpiresAt = null;
+        if (Status is not (PaymentAttemptStatus.Captured or PaymentAttemptStatus.Failed) && DeliveryCount >= 8)
+        { NeedsAttention = true; LastErrorCode = "reconciliation_exhausted"; }
+    }
+
+    public void ReviewLookup(string code, DateTimeOffset now)
+    {
+        RequireReview(code, now);
+        ReconciledAt = now;
+    }
+
+    public void RequireReview(string code, DateTimeOffset now)
+    {
+        if (Status == PaymentAttemptStatus.Captured) return;
+        NeedsAttention = true; LastErrorCode = code;
+        if (ObservedState != GatewayPaymentState.Succeeded) Status = PaymentAttemptStatus.Unknown;
+        UpdatedAt = now > UpdatedAt ? now : UpdatedAt;
+        LeaseToken = null; LeaseExpiresAt = null;
+    }
 
     public static PaymentAttempt Create(Order order, DateTimeOffset now)
     {
@@ -82,7 +126,7 @@ public sealed class PaymentAttempt
             {
                 ProviderTransactionId = result.TransactionId; ProviderCaptureId = result.CaptureId; ObservedState = result.State;
                 Status = result.State == GatewayPaymentState.Failed ? PaymentAttemptStatus.Failed : PaymentAttemptStatus.Pending;
-                // Capture settlement is deliberately deferred. Keep success unresolved, blocking replacement.
+                // Submission records evidence only; callback/reconciliation settles under the order lock.
                 NeedsAttention = result.State == GatewayPaymentState.Succeeded;
                 LastErrorCode = NeedsAttention ? "settlement_pending" : null;
             }

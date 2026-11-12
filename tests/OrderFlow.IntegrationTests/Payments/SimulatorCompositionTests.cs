@@ -10,6 +10,20 @@ namespace OrderFlow.IntegrationTests.Payments;
 
 public sealed class SimulatorCompositionTests
 {
+    [Theory]
+    [InlineData("RefundProcessing:Enabled")]
+    [InlineData("PaymentReconciliation:Enabled")]
+    public void Recovery_workers_are_opt_in_seed_suppressed_and_share_only_restricted_gateway_configuration(string flag)
+    {
+        Assert.Throws<InvalidOperationException>(() => WorkerHost.Build(["--environment", "Production", "--" + flag, "true"]));
+        var args = new[] { "--environment", "Testing", "--OrderExpiry:Enabled", "false", "--" + flag, "true",
+            "--PaymentGateway:BaseUrl", "http://127.0.0.1:5090/", "--PaymentGateway:ApiKey", Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)) };
+        using var enabled = WorkerHost.Build(args);
+        Assert.Single(enabled.Services.GetServices<IHostedService>());
+        if (flag == "RefundProcessing:Enabled") Assert.IsType<RefundWorker>(enabled.Services.GetServices<IHostedService>().Single());
+        else Assert.IsType<PaymentReconciliationWorker>(enabled.Services.GetServices<IHostedService>().Single());
+        using var seed = WorkerHost.Build(args, runBackgroundJobs: false); Assert.Empty(seed.Services.GetServices<IHostedService>());
+    }
     [Fact]
     public void Callback_settings_require_a_private_secret_only_when_enabled_and_settlement_is_opt_in_seed_suppressed()
     {

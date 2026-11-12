@@ -23,7 +23,10 @@ public static class WorkerHost
             builder.Services.AddHostedService<PaymentSettlementWorker>();
         if (runBackgroundJobs && builder.Configuration.GetValue("OrderExpiry:Enabled", true))
             builder.Services.AddHostedService<OrderExpiryWorker>();
-        if (builder.Configuration.GetValue("PaymentProcessing:Enabled", false))
+        var submit = builder.Configuration.GetValue("PaymentProcessing:Enabled", false);
+        var reconcile = builder.Configuration.GetValue("PaymentReconciliation:Enabled", false);
+        var refunds = builder.Configuration.GetValue("RefundProcessing:Enabled", false);
+        if (submit || reconcile || refunds)
         {
             if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("Testing"))
                 throw new InvalidOperationException("The simulator gateway is restricted to Development/Testing.");
@@ -36,7 +39,11 @@ public static class WorkerHost
                 { AllowAutoRedirect = false, PooledConnectionLifetime = TimeSpan.FromMinutes(5) })
                 { BaseAddress = uri, Timeout = TimeSpan.FromSeconds(15), MaxResponseContentBufferSize = 16 * 1024 }, key));
             builder.Services.AddSingleton<PaymentProcessingIteration>();
-            if (runBackgroundJobs) builder.Services.AddHostedService<PaymentWorker>();
+            builder.Services.AddSingleton<PaymentReconciliationIteration>();
+            builder.Services.AddSingleton<RefundProcessingIteration>();
+            if (runBackgroundJobs && submit) builder.Services.AddHostedService<PaymentWorker>();
+            if (runBackgroundJobs && reconcile) builder.Services.AddHostedService<PaymentReconciliationWorker>();
+            if (runBackgroundJobs && refunds) builder.Services.AddHostedService<RefundWorker>();
         }
         return builder.Build();
     }

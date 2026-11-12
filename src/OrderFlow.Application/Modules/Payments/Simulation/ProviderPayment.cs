@@ -3,6 +3,12 @@ using OrderFlow.Application.Common.Money;
 namespace OrderFlow.Application.Modules.Payments.Simulation;
 
 public enum SimulatorScenario { Pending, Succeeded, Failed, TimeoutBeforeAccept, TimeoutAfterCapture, MismatchedAmount }
+public enum SimulatorRefundScenario { Succeeded, TimeoutBeforeAccept, TimeoutAfterSuccess, Rejected }
+public sealed class ProviderRefundScenario
+{
+    public required string RequestKey { get; set; }
+    public SimulatorRefundScenario Scenario { get; set; }
+}
 public sealed class ProviderScenario
 {
     public required string RequestKey { get; set; }

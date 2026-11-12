@@ -896,6 +896,9 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<DateTimeOffset?>("ReconciledAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -974,10 +977,10 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .UseCollation("C");
 
-                    b.Property<Guid>("ProviderEventId")
+                    b.Property<Guid?>("ProviderEventId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("ProviderOccurredAt")
+                    b.Property<DateTimeOffset?>("ProviderOccurredAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ProviderTransactionId")
@@ -988,6 +991,13 @@ namespace OrderFlow.Application.Persistence.Migrations
 
                     b.Property<DateTimeOffset>("RecordedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Callback");
 
                     b.HasKey("Id");
 
@@ -1005,7 +1015,9 @@ namespace OrderFlow.Application.Persistence.Migrations
 
                     b.ToTable("PaymentCaptures", "payments", t =>
                         {
-                            t.HasCheckConstraint("CK_PaymentCaptures_Facts", "\"Provider\" = 'Simulator' AND length(\"ProviderCaptureId\") > 0 AND length(\"ProviderTransactionId\") > 0 AND \"Amount\" > 0 AND \"Currency\" = 'USD' AND isfinite(\"ProviderOccurredAt\") AND isfinite(\"RecordedAt\")");
+                            t.HasCheckConstraint("CK_PaymentCaptures_Facts", "\"Provider\" = 'Simulator' AND length(\"ProviderCaptureId\") > 0 AND length(\"ProviderTransactionId\") > 0 AND \"Amount\" > 0 AND \"Currency\" = 'USD' AND (\"ProviderOccurredAt\" IS NULL OR isfinite(\"ProviderOccurredAt\")) AND isfinite(\"RecordedAt\")");
+
+                            t.HasCheckConstraint("CK_PaymentCaptures_Source", "(\"Source\" = 'Callback' AND \"ProviderEventId\" IS NOT NULL AND \"ProviderOccurredAt\" IS NOT NULL) OR (\"Source\" = 'ProviderLookup' AND \"ProviderEventId\" IS NULL AND \"ProviderOccurredAt\" IS NULL)");
                         });
                 });
 
@@ -1083,6 +1095,23 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");
 
+                    b.Property<int>("DeliveryCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LeaseToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1091,6 +1120,11 @@ namespace OrderFlow.Application.Persistence.Migrations
 
                     b.Property<string>("ProviderCaptureId")
                         .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("C");
+
+                    b.Property<string>("ProviderRefundId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .UseCollation("C");
@@ -1116,6 +1150,12 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<DateTimeOffset?>("SucceededAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CaptureId")
@@ -1124,12 +1164,26 @@ namespace OrderFlow.Application.Persistence.Migrations
                     b.HasIndex("ProviderRefundKey")
                         .IsUnique();
 
+                    b.HasIndex("NextAttemptAt", "Id")
+                        .HasDatabaseName("IX_Refunds_Due")
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.HasIndex("Provider", "ProviderRefundId")
+                        .IsUnique()
+                        .HasFilter("\"ProviderRefundId\" IS NOT NULL");
+
                     b.HasIndex("Provider", "ProviderCaptureId", "Purpose")
                         .IsUnique();
 
                     b.ToTable("Refunds", "payments", t =>
                         {
-                            t.HasCheckConstraint("CK_Refunds_Intention", "\"Provider\" = 'Simulator' AND \"Purpose\" = 'FullCompensation' AND \"Status\" = 'RefundPending' AND \"Currency\" = 'USD' AND \"Amount\" > 0 AND isfinite(\"CreatedAt\") AND length(\"Reason\") > 0 AND \"ProviderRefundKey\" = 'refund-' || replace(\"Id\"::text,'-','')");
+                            t.HasCheckConstraint("CK_Refunds_Delivery", "\"DeliveryCount\" BETWEEN 0 AND 8 AND isfinite(\"UpdatedAt\") AND \"UpdatedAt\" >= \"CreatedAt\" AND isfinite(\"NextAttemptAt\") AND \"NextAttemptAt\" >= \"CreatedAt\"");
+
+                            t.HasCheckConstraint("CK_Refunds_Intention", "\"Provider\" = 'Simulator' AND \"Purpose\" = 'FullCompensation' AND \"Status\" IN ('Pending','Succeeded','NeedsReview') AND \"Currency\" = 'USD' AND \"Amount\" > 0 AND isfinite(\"CreatedAt\") AND length(\"Reason\") > 0 AND \"ProviderRefundKey\" = 'refund-' || replace(\"Id\"::text,'-','')");
+
+                            t.HasCheckConstraint("CK_Refunds_Lease", "(\"LeaseToken\" IS NULL AND \"LeaseExpiresAt\" IS NULL) OR (\"LeaseToken\" IS NOT NULL AND \"LeaseExpiresAt\" IS NOT NULL AND isfinite(\"LeaseExpiresAt\") AND \"LeaseExpiresAt\" > \"UpdatedAt\" AND \"DeliveryCount\" > 0)");
+
+                            t.HasCheckConstraint("CK_Refunds_Outcome", "(\"Status\" = 'Succeeded' AND \"ProviderRefundId\" IS NOT NULL AND length(\"ProviderRefundId\") > 0 AND \"SucceededAt\" IS NOT NULL AND isfinite(\"SucceededAt\") AND \"SucceededAt\" >= \"CreatedAt\" AND \"LeaseToken\" IS NULL AND \"LastErrorCode\" IS NULL) OR (\"Status\" IN ('Pending','NeedsReview') AND \"ProviderRefundId\" IS NULL AND \"SucceededAt\" IS NULL AND (\"Status\" <> 'NeedsReview' OR \"LastErrorCode\" IS NOT NULL))");
                         });
                 });
 
@@ -1252,6 +1306,23 @@ namespace OrderFlow.Application.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_ProviderRefunds_Money", "\"Currency\" = 'USD' AND \"Amount\" > 0 AND \"Amount\" <= 9999999999999999.99 AND isfinite(\"CreatedAt\")");
                         });
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Payments.Simulation.ProviderRefundScenario", b =>
+                {
+                    b.Property<string>("RequestKey")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .UseCollation("C");
+
+                    b.Property<string>("Scenario")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("RequestKey");
+
+                    b.ToTable("ProviderRefundScenarios", "simulator");
                 });
 
             modelBuilder.Entity("OrderFlow.Application.Modules.Payments.Simulation.ProviderScenario", b =>
@@ -1519,8 +1590,7 @@ namespace OrderFlow.Application.Persistence.Migrations
                     b.HasOne("OrderFlow.Application.Modules.Payments.PaymentEvent", null)
                         .WithMany()
                         .HasForeignKey("Provider", "ProviderEventId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("OrderFlow.Application.Modules.Payments.PaymentRefund", b =>

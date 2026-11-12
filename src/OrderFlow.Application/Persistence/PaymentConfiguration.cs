@@ -82,3 +82,13 @@ public sealed class ProviderRefundConfiguration : IEntityTypeConfiguration<Provi
         b.HasOne<ProviderPayment>().WithMany().HasForeignKey(x => x.PaymentRequestKey).OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public sealed class ProviderRefundScenarioConfiguration : IEntityTypeConfiguration<ProviderRefundScenario>
+{
+    public void Configure(EntityTypeBuilder<ProviderRefundScenario> b)
+    {
+        b.ToTable("ProviderRefundScenarios", "simulator"); b.HasKey(x => x.RequestKey);
+        b.Property(x => x.RequestKey).HasMaxLength(80).UseCollation("C");
+        b.Property(x => x.Scenario).HasConversion<string>().HasMaxLength(32);
+    }
+}
