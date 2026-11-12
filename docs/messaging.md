@@ -1,6 +1,6 @@
 # RabbitMQ outbox publication
 
-Checkout, stock and payment transactions save OutboxMessages atomically with business changes. They never call RabbitMQ. An opt-in Worker delivers committed rows; broker downtime delays publication without undoing an order. Published means **mandatory routing and broker confirmation**, not that any business consumer ran. No notification/reporting handler is installed in this milestone.
+Checkout, stock and payment transactions save OutboxMessages atomically with business changes. They never call RabbitMQ. An opt-in Worker delivers committed rows; broker downtime delays publication without undoing an order. Published means **mandatory routing and broker confirmation**, not that any business consumer ran. The publisher milestone introduced no handler; [durable order notifications](notifications.md) now consume a separate queue. Reporting remains planned.
 
 ## Local setup
 
@@ -85,7 +85,7 @@ All exchanges are durable topic exchanges; queues are durable, nonexclusive, non
 | orderflow.retry-ready.v1 | orderflow.integration.retry.v1 | NACK(requeue:false), delivery exhaustion -> dead exchange |
 | orderflow.dead.v1 | orderflow.integration.dead.v1 | Park for review; no automatic forwarding |
 
-The main queue/binding is declared before any successful publish. Main and retry-work consumers are future work. There is **one delayed retry stage**; x-delivery-limit=5 also bounds poison redelivery when a future consumer crashes or requeues. Do not write infinite immediate NACK(requeue:true) loops. Delay/dead queues have no application business consumer. Dead-letter sources use at-least-once quorum forwarding with reject-publish; downstream unavailability/full queues retain source work until forwarding is confirmed. Bounded queue length defaults to 10,000 (quorum may overshoot slightly); overflow can NACK the publisher. Messages are persistent. One development node survives tested restart; it provides no multi-node availability guarantee.
+The main queue/binding is declared before any successful publish. The foundation main/retry-work queues remain undrained; [notifications](notifications.md) has its own work/delay/retry/dead queues and consumer. There is **one delayed retry stage**; x-delivery-limit=5 also bounds poison redelivery when a future consumer crashes or requeues. Do not write infinite immediate NACK(requeue:true) loops. Delay/dead queues have no application business consumer. Dead-letter sources use at-least-once quorum forwarding with reject-publish; downstream unavailability/full queues retain source work until forwarding is confirmed. Bounded queue length defaults to 10,000 (quorum may overshoot slightly); overflow can NACK the publisher. Messages are persistent. One development node survives tested restart; it provides no multi-node availability guarantee.
 
 ## Observe and recover
 

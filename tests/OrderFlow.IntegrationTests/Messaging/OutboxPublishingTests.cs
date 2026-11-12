@@ -113,7 +113,11 @@ public sealed class OutboxPublishingTests(PostgresServer server, RabbitMqServer 
         await publisher.EnsureTopologyAsync(default);
         await using (var connection = await settings.Factory().CreateConnectionAsync())
         await using (var admin = await connection.CreateChannelAsync())
+        {
             await admin.QueueUnbindAsync(settings.Queue, settings.Exchange, "#");
+            foreach (var type in OrderFlow.Application.Modules.Notifications.OrderNotificationEvent.SupportedTypes.Keys)
+                await admin.QueueUnbindAsync(settings.NotificationQueue, settings.Exchange, type);
+        }
         Assert.True(await PublishAsync(publisher));
         var failed = await ReadAsync(); Assert.Equal(OutboxStatus.Pending, failed.Status); Assert.Equal("broker_unroutable", failed.LastErrorCode);
         Assert.Null(failed.PublishedAt);
@@ -141,8 +145,9 @@ public sealed class OutboxPublishingTests(PostgresServer server, RabbitMqServer 
         await using (var connection = await settings.Factory().CreateConnectionAsync())
         await using (var admin = await connection.CreateChannelAsync())
         {
-            for (var i = 0; i < 10; i++)
-                if (await admin.BasicGetAsync(settings.Queue, true) is null) break;
+            foreach (var queue in new[] { settings.Queue, settings.NotificationQueue })
+                for (var i = 0; i < 10; i++)
+                    if (await admin.BasicGetAsync(queue, true) is null) break;
         }
         clock.Advance(TimeSpan.FromSeconds(5));
         Assert.True(await PublishAsync(publisher)); Assert.Equal(OutboxStatus.Published, (await ReadAsync()).Status);

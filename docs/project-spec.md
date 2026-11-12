@@ -148,6 +148,10 @@ All paths below are under `/api`. Browser POST/PUT/PATCH/DELETE endpoints, inclu
 | GET `/admin/orders/{id}` | Admin | Current order/items/OrderStatusHistory and effective-expiry metadata; payment/refund summaries remain future |
 | POST `/admin/orders/{id}/transitions` | Admin + CSRF | targetStatus + expectedVersion; 200 current order |
 | POST `/payments/simulator/callback` | Signed provider only, CSRF exempt | Authenticated event; 202 after durable inbox receipt, also for exact duplicate |
+| GET `/notifications` | Authenticated | Own paginated notifications; optional unreadOnly |
+| GET `/notifications/unread-count` | Authenticated | Own unread count |
+| GET `/notifications/{id}` | Owning authenticated user | Own notification detail; other/missing 404 |
+| POST `/notifications/{id}/read` | Owning authenticated user + CSRF | Empty body; idempotent first read timestamp; 200 |
 | GET `/admin/reports/sales` | Admin | UTC `[from,to)` range, daily USD sales, current order-state counts, projection checkpoint |
 | GET `/admin/operations/failures` | Admin | Bounded list of failed/quarantined jobs and sanitized error codes |
 | GET `/health/live` | Anonymous | Process liveness only; no sensitive detail |
@@ -258,3 +262,9 @@ The separate Worker now finalizes due PendingPayment orders with one SKIP LOCKED
 [ADR-021](adr/0021-rabbitmq-outbox-publication.md) implements producer-to-broker publication of existing committed outbox events. EnvelopeVersion=1 versions the transport contract independently of SchemaVersion for data; optional producer-time W3C trace context survives retries. The producer row is Published only after persistent mandatory publication to declared durable exchange/queue/binding receives a positive tracked broker confirm without return. This says nothing about business-consumer completion. Unroutable/NACK/unavailable results never become Published; uncertain confirmation/local acknowledgement loss can deliver the same EventId again. PostgreSQL claims are bounded and token/owner/expiry fenced, transient retries back off and stop at eight; failed rows are retained for review. Checkout never calls RabbitMQ.
 
 The finite durable work/delay/retry/dead topology is available now; notification/reporting consumers and their transactional inbox/effect implementation remain milestones 23/24. They must deduplicate the original EventId, tolerate reordering, explicitly ACK after their own commit and avoid immediate infinite requeue. See [messaging recovery operations](messaging.md).
+
+## Durable user notification clarification — 23
+
+[ADR-022](adr/0022-durable-user-notifications.md) and [notification guide](notifications.md) implement v1 local notifications (the planned event/template/recipient delivery identity) as readable Notifications with unique source-event/type/recipient and created/read timestamps. One intended recipient is the authoritative order owner for each created/confirmed/cancelled/expired/processing/shipped/completed event. Consumer identity notifications.orders.v1 plus EventId independently deduplicates, with INSERT/constraint/row locking inside the same transaction as notification, handled inbox and NotificationCreated outbox. ACK occurs only after commit. No email/realtime network call occurs during that transaction.
+
+Only EnvelopeVersion 1 / SchemaVersion 1 is supported. Unsupported older/newer/missing versions, malformed/oversized/invalid UTF-8/duplicate-key JSON and failed identity/owner/history correlation follow finite notification delay/retry/DLQ; unknown types have no subscription. Historical supported events can arrive out of order without modifying order state or resetting read receipts. Authenticated APIs always scope to the current user, including Admin; browser read POST keeps antiforgery. NotificationCreated is a future realtime intention only. Historical Published backfill, audited replay, email, realtime/UI and reporting remain deferred.

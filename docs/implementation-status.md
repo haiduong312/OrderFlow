@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-12 (Asia/Ho_Chi_Minh). Current milestone: **14 publisher slice — durable RabbitMQ outbox publication**. Existing committed events now use versioned persistent mandatory/confirmed publication, PostgreSQL owner/token leases and bounded retry/failure evidence. Development Compose and finite durable retry/DLQ topology are added. Business consumers, audited replay, UI and deployment remain outside this milestone; payment/refund recovery from 18 remains implemented.
+Updated: 2026-11-12 (Asia/Ho_Chi_Minh). Current milestone: **23 — durable order notifications through RabbitMQ and owner-scoped APIs**. Notification/inbox/NotificationCreated outbox commit atomically before ACK; concurrent duplicates, bounded poison/retry/DLQ, scoped subscriptions and authenticated list/detail/unread/read are implemented. Email/realtime/UI, reporting, audited replay/backfill and deployment remain outside this milestone. Prior payment/refund and outbox publication behavior remains implemented.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -52,7 +52,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 20 | Browser session/CSRF flow, active catalog, cart and exact cents state | 05, 06, 07 | A03, A20 | Pending |
 | 21 | Checkout UI, pending key/body recovery, authoritative order/deadline/payment/cancel views | 18, 20 | A03, A20 | Pending |
 | 22 | Admin catalog/stock/order/fulfillment UI with state/version conflict handling | 09, 19, 20 | A20 | Pending |
-| 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Pending |
+| 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Complete for requested durable notification scope: RabbitMQ inbox/effect/outbox transaction, owner APIs and finite failure path; email/realtime/UI and audited replay remain later |
 | 24 | Versioned reporting projection, daily winning sales, range/auth tests and report UI | 19, 20, 23 | A17, A18, A21 | Pending |
 | 25 | Reproducible API/client/worker/proxy local composition, migration command, runtime DB roles and readiness | 22, 24 | A01, A16, A22 | Pending |
 | 26 | Deployment hardening/shared protected Data Protection keys; multi-worker/crash/uncertain commit/stale lease fault suite; retry/no-network-in-transaction evidence | 04, 18, 23, 24, 25 | A02, A12, A17–A19, A22, A23 | Pending |
@@ -1122,3 +1122,76 @@ The integration queue is deliberately undrained until business consumers ship in
 3. **Mandatory khác confirm, và DLQ khác retry thế nào?** Mandatory phát hiện không có route; confirm phản ánh broker nhận/chấp nhận. Backoff outbox và finite delay/retry-work/DLQ xử lý hai giai đoạn khác nhau, không dùng vòng requeue vô hạn.
 
 Suggested commit title (none supplied): `feat: publish durable outbox events to RabbitMQ`.
+
+
+## Durable RabbitMQ order notifications — 23 (2026-11-12)
+
+### Scope and decisions
+
+Implements the requested local user notification consumer/read workflow on the existing outbox publisher, with no new package/SDK/lockfile change. Initial Git status was clean; instructions/spec/architecture/ADRs, current client 7.2.2, package locks, ten existing migrations and test harness were inspected. Official RabbitMQ .NET guide and 7.2.2 source verified consumer buffer lifetime, async channel options, dispatch concurrency/prefetch and manual ACK semantics. [ADR-022](adr/0022-durable-user-notifications.md) records routine contract details: seven lifecycle events, one authoritative order-owner recipient, Type as the v1 template identity, read APIs and explicit schema/failure behavior. This realizes the planned local event/template/recipient delivery as readable Notifications; no incompatible payment/order behavior is changed.
+
+No email, socket/realtime delivery, reporting, Admin broadcast, general refund/return, automatic historical backfill, audited redrive or deployment is added. NotificationCreated is a durable future realtime intention only.
+
+### Acceptance delivered
+
+| Criterion | Result |
+| --- | --- |
+| Notification persistence | Recipient/source EventId/type/order/created/read; unique source/type/recipient, restrictive user/order FKs, list/unread indexes and SQL owner/identity/read guards |
+| Atomic effects and dedup | Consumer notifications.orders.v1 + EventId unique INSERT ON CONFLICT then FOR UPDATE; type/schema/exact-body hash correlation; Notification + Processed inbox + NotificationCreated outbox commit together |
+| Simultaneous duplicates | Two real subscriptions, prefetch one, distinct contexts rendezvous before contested inbox INSERT; both ACK, exactly one notice/inbox/outbox |
+| Independent consumers | Same EventId with another ConsumerName remains independent; conflicting bytes under handled identity rejected, no evidence overwritten |
+| Commit-before-ACK/crash | Real ACK-boundary fault proves all three effects visible before ACK; real channel close/redelivery creates no duplicate, read state also survives later duplicate |
+| Relevant supported events | created/confirmed/cancelled/expired/processing/shipped/completed v1; recipient checked against stored owner and snapshot against immutable history; old events cannot change current order/stock |
+| Envelope/schema safety | <=64 KiB strict UTF-8/object JSON, depth 32, duplicate-key rejection, header/body IDs/type, provenance/trace and required order snapshot validation; older/missing/newer versions are poison |
+| Bounded RabbitMQ work | Independent durable notification main/delay/retry/dead topology; one delayed retry then parked, at-least-once DLX/reject-publish/delivery limit; no immediate requeue loop |
+| Scoped concurrency/shutdown | One connection/channel with sequential dispatch per subscription, manual single-delivery ACK/NACK, fresh scope/DbContext per delivery; 1–4 consumers per queue, prefetch 1–32; cancellation preserves unacknowledged work |
+| Failure classification | Poison and classified transient PostgreSQL failures NACK(false) through finite topology; full rollback including partially written notification; unknown exceptions fault host; broker reconnect/session attempts stop after eight per slot/run |
+| Authenticated API | Own list/detail/unread/read; no client recipient ID; Admin has no override; non-owner/missing 404, real cookies/CSRF enforced, bounded pagination, no-store and concurrent idempotent read receipt |
+| Migration/regression | Populated previous-schema order/event survive additive upgrade/reapplication; publisher mandatory-return/full-queue tests adapt to independent fan-out bindings; no developer DB/data reset |
+
+### Luồng chính (Vietnamese)
+
+Publisher vẫn gửi event đã commit vào exchange durable. Queue notification riêng chỉ bind bảy sự kiện order; consumer khác giữ queue và inbox identity riêng. Callback consumer kiểm tra bytes/schema/MessageId/Type rồi tạo scope PostgreSQL mới. Trong transaction, INSERT inbox với ON CONFLICT và khóa dòng thắng để xử lý duplicate đồng thời. Dữ liệu order trong DB quyết định người nhận; history xác nhận version/status nên event cũ vẫn xử lý được mà không sửa trạng thái order.
+
+Notification, inbox Processed và NotificationCreated outbox được lưu trong cùng transaction. Chỉ sau commit và giải phóng scope mới ACK một delivery. Nếu crash/mất ACK sau commit, lần nhận lại thấy marker hợp lệ và không tạo thêm effect. Cùng EventId nhưng body khác bị giữ theo poison path. Không gửi email hoặc gọi broker trong transaction DB.
+
+Lỗi JSON/schema/ownership hoặc lỗi DB transient NACK với requeue=false: main -> delay -> retry-work -> dead queue, không quay vòng vô hạn. Mỗi subscription xử lý tuần tự trên channel riêng, tạo DbContext riêng cho từng message. API lấy user từ cookie, chỉ list/count/get/read dòng của user đó; read là UPDATE có điều kiện ReadAt IS NULL, nên hai request đồng thời vẫn giữ timestamp đọc đầu tiên. Replay event không làm unread trở lại.
+
+### Important files and migration
+
+- Application/Modules/Notifications/Notification, OrderNotificationEvent, NotificationProcessor, NotificationService: data/contract validation, consumer transaction and own read operations/DTOs.
+- Api/Notifications/NotificationsController + Program: thin authenticated list/detail/unread/read routes; existing global browser CSRF retained.
+- Worker/Messaging/NotificationConsumerOptions, NotificationConsumerSubscription, NotificationConsumerWorker, NotificationDeliveryHandler; WorkerHost/appsettings: opt-in independent subscriptions, scopes/manual ACK, safe failure propagation/load bounds.
+- RabbitMqTopology/RabbitMqSettings: additive independent notification quorum queues/exchanges/exact bindings; old integration destinations preserved. Publisher declares new queues even when consumer disabled; NotificationCreated has no recursive binding.
+- Migration **20261112035709_AddNotifications**, designer/snapshot/NotificationConfiguration and DbContext: additive table/indexes/checks/FKs, immutable notification/read facts, authoritative owner guard and handled notification inbox update/delete guard. Down refuses evidence loss. Migration count 10 -> 11; no developer DB applied/reset.
+- NotificationTests/NotificationHttpTests/NotificationCompositionTests/NotificationTestSupport and OrderNotificationEventTests; two publisher topology regressions adjusted for real fan-out.
+- [Notification runbook](notifications.md), [ADR-022](adr/0022-durable-user-notifications.md), spec/architecture/persistence/testing/README/.env.example and this status.
+
+### Exact checks and evidence
+
+All .NET commands used DOTNET_CLI_HOME=/tmp/orderflow-callbacks/dotnet-home and NUGET_PACKAGES=/tmp/orderflow-callbacks/packages, with installed/pinned SDK 10.0.115. Artifacts/logs/TRX/SQL are outside the repository under /tmp/orderflow-notifications. No SDK/package/lockfile changes, fake broker/database, success skips, developer DB migration or user volume reset.
+
+1. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-notifications/artifacts --disable-parallel -m:1` — exit 0/all six projects with auditing enabled; `/tmp/orderflow-notifications-restore.log`.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-notifications/artifacts -m:1` — final exit 0, **0 warnings/errors**; `/tmp/orderflow-notifications-build-final.log`. Initial compilation caught the 7.2.2 CreateChannelOptions constructor requiring explicit confirmation booleans and a missing fixture namespace import; corrected before acceptance runs.
+3. `dotnet ef migrations add AddNotifications --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output-dir Persistence/Migrations` with ArtifactsPath=/tmp/orderflow-notifications/artifacts and nonconnecting design connection — exit 0; `/tmp/orderflow-notifications-migration.log`. Reviewed generated migration and added recipient/immutable/read/handled-inbox guards and forward-only evidence retention. Actual Up/populated upgrade/reapplication ran only in owned test databases.
+4. Focused `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-notifications/artifacts -m:1 --filter 'FullyQualifiedName~Notification|FullyQualifiedName~OutboxPublishingTests' --logger 'trx;LogFilePrefix=notifications-focused' --results-directory /tmp/orderflow-notifications/results` initially passed 32/33 integration + 21 unit: a test mutated CorrelationId to check collision and then incorrectly reused the mutated value in its unchanged-evidence assertion. Restored the original expected value. Expanded `... --logger 'trx;LogFilePrefix=notifications-focused-final' ...` passed 34/35 integration + 21 unit; only legacy fixture failed because the real development seeder correctly refuses pending migrations. Replaced old-schema setup with direct unchanged domain fixtures (as existing migration tests do), retaining the production seeder guard. Logs `/tmp/orderflow-notifications-focused.log` and `...-focused-final.log`.
+5. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-notifications/artifacts -m:1 --filter 'FullyQualifiedName~Populated_previous_schema_upgrades_without_losing_original_event_or_order' --logger 'trx;LogFilePrefix=notifications-upgrade' --results-directory /tmp/orderflow-notifications/results` — exit 0, **1 actual PostgreSQL upgrade case passed**; UnitTests has no matching case (not a skip/fallback); `/tmp/orderflow-notifications-upgrade.log`.
+6. Full `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-notifications/artifacts -m:1 --logger 'trx;LogFilePrefix=notifications-full' --results-directory /tmp/orderflow-notifications/results` — exit 0, **380 integration + 150 unit = 530 passed**, **0 failed/skipped**, integration duration **3m41s**. Baseline 490; adds **12 real PostgreSQL/RabbitMQ cases**, **6 PostgreSQL/HTTP cases**, **1 composition case** and **21 parser cases**. Includes all corrected tests and existing payment/stock/security/publisher regressions. Evidence `/tmp/orderflow-notifications-full.log`; TRX `notifications-full_net10.0_20261112150702.trx` and `notifications-full_net10.0_20261112150703.trx`. No production/test code changed after this run.
+7. `dotnet ef migrations has-pending-model-changes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` with matching ArtifactsPath/design connection — exit 0, **no model drift**; `/tmp/orderflow-notifications-drift.log`. `dotnet ef migrations script --idempotent --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output /tmp/orderflow-notifications/migrations.sql` — exit 0; reviewed additive DDL, unique/FK/indexes and notification/handled-inbox SQL guards; `/tmp/orderflow-notifications-script.log`.
+8. `git diff --check` — exit 0. Local documentation/config checker validated **42 Markdown files / 406 local targets**, balanced fences and Worker JSON. Git diff reviewed; no credentials/generated artifacts included. Existing source package pins/lockfiles/global.json/Compose preserved. No user data deletion or commit/push/deploy.
+
+Unverified: independently killed OS processes, clustered broker failover/network partitions/uncertain PostgreSQL commit, real email/realtime transport, audited redrive/historical backfill and production TLS/runtime roles/HA. The tested crash is an injected post-commit/pre-ACK failure plus actual broker channel closure/redelivery, not an OS-kill claim. Finite malformed/transient failure paths were observed through real broker subscriptions and DLQ callbacks.
+
+### Manual verification / trade-offs
+
+Follow [notification runbook](notifications.md): private DB/broker setup -> explicit migration -> API + Worker with OutboxPublishing and Notifications enabled -> authenticated checkout/cancel -> own list/unread -> CSRF-protected /read -> repeat timestamp -> second user/Admin denied another user's detail/read. Run focused tests for deterministic redelivery/failure windows. Broker inspection uses read-only queue metadata; never consume/discard DLQ for diagnosis.
+
+Notifications represent immutable event notices, not latest-state projections. One owner receives one notice/type/event; historical arrival is allowed and CreatedAt is local processing time. No automatic backfill of already Published events predating the new binding. Finite message retry intentionally parks prolonged outages for review; bounded reconnect failure stops Worker for operator restart. Exact-body hash requires preserving original raw envelope on redrive. Existing integration queue remains undrained by this consumer; independent consumers need separate bindings/inbox identities. Production TLS/roles/cluster HA, OS-process kill/network partition/uncertain SQL commit, email/realtime/UI, archival and audited replay remain future work. No exactly-once transport/external-effect claim or user data deletion.
+
+### Three interview questions
+
+1. **Vì sao unique inbox INSERT và notification phải chung transaction?** Hiểu concurrent duplicate phải tranh ở PostgreSQL; rollback phải bỏ cả marker/effects; check-exists riêng không đủ.
+2. **Crash sau commit nhưng trước ACK có làm trùng không?** Broker có thể giao lại; consumer identity + EventId và unique effect làm lần sau no-op, không reset ReadAt hoặc tạo thêm NotificationCreated.
+3. **Vì sao recipient/read không lấy từ request hoặc chỉ payload?** Cookie xác định người đọc; order owner/history trong DB xác nhận người nhận và event. Admin cũng không được đọc chéo qua endpoint này; CSRF vẫn cần cho POST.
+
+Suggested commit title (none supplied): `feat: add durable order notifications and owner-scoped APIs`.

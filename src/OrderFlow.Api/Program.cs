@@ -7,6 +7,7 @@ using OrderFlow.Api.Inventory;
 using OrderFlow.Application.Modules.Ordering;
 using OrderFlow.Application.Modules.Payments;
 using OrderFlow.Api.Payments;
+using OrderFlow.Application.Modules.Notifications;
 
 namespace OrderFlow.Api;
 
@@ -20,6 +21,7 @@ public class Program
         builder.Services.AddBrowserAuthentication();
         builder.Services.AddCatalog();
         builder.Services.AddInventory();
+        builder.Services.AddScoped<NotificationService>();
         builder.Services.AddScoped<CheckoutService>();
         builder.Services.AddScoped<OrderReadService>();
         builder.Services.AddScoped<OrderLifecycleService>();

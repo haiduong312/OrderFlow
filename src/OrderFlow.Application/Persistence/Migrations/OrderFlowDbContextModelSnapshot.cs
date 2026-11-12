@@ -693,6 +693,57 @@ namespace OrderFlow.Application.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("OrderFlow.Application.Modules.Notifications.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RecipientUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SourceEventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("RecipientUserId")
+                        .HasDatabaseName("IX_Notification_User_Unread")
+                        .HasFilter("\"ReadAt\" IS NULL");
+
+                    b.HasIndex("RecipientUserId", "CreatedAt", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("IX_Notification_User_Created");
+
+                    b.HasIndex("SourceEventId", "Type", "RecipientUserId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Notification_Source_Type_Recipient");
+
+                    b.ToTable("Notifications", "notifications", t =>
+                        {
+                            t.HasCheckConstraint("CK_Notification_Identity", "\"Id\" <> '00000000-0000-0000-0000-000000000000'::uuid AND \"SourceEventId\" <> '00000000-0000-0000-0000-000000000000'::uuid");
+
+                            t.HasCheckConstraint("CK_Notification_Times", "isfinite(\"CreatedAt\") AND (\"ReadAt\" IS NULL OR (isfinite(\"ReadAt\") AND \"ReadAt\" >= \"CreatedAt\"))");
+
+                            t.HasCheckConstraint("CK_Notification_Type", "\"Type\" IN ('ordering.order-created','ordering.order-confirmed','ordering.order-cancelled','ordering.order-expired','ordering.order-processing','ordering.order-shipped','ordering.order-completed')");
+                        });
+                });
+
             modelBuilder.Entity("OrderFlow.Application.Modules.Ordering.Order", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1532,6 +1583,21 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .HasForeignKey("ReservationId", "OrderId", "ProductId")
                         .HasPrincipalKey("Id", "OrderId", "ProductId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("OrderFlow.Application.Modules.Notifications.Notification", b =>
+                {
+                    b.HasOne("OrderFlow.Application.Modules.Ordering.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OrderFlow.Application.Modules.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OrderFlow.Application.Modules.Ordering.Order", b =>

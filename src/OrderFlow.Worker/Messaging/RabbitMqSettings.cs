@@ -22,6 +22,14 @@ public sealed class RabbitMqSettings
     public string DeadExchange => Prefix + ".dead.v1";
     public string DeadQueue => Prefix + ".integration.dead.v1";
 
+    public string NotificationQueue => Prefix + ".notifications.orders.v1";
+    public string NotificationDelayQueue => Prefix + ".notifications.orders.delay.v1";
+    public string NotificationRetryQueue => Prefix + ".notifications.orders.retry.v1";
+    public string NotificationDeadQueue => Prefix + ".notifications.orders.dead.v1";
+    public string NotificationRetryExchange => Prefix + ".notifications.retry.v1";
+    public string NotificationReadyExchange => Prefix + ".notifications.retry-ready.v1";
+    public string NotificationDeadExchange => Prefix + ".notifications.dead.v1";
+
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(HostName) || Port is < 1 or > 65535 || string.IsNullOrWhiteSpace(VirtualHost)

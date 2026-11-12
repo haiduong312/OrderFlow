@@ -2,6 +2,7 @@ using OrderFlow.Application.Persistence;
 using OrderFlow.Application.Modules.Ordering;
 using OrderFlow.Application.Modules.Payments;
 using OrderFlow.Application.Messaging;
+using OrderFlow.Application.Modules.Notifications;
 using OrderFlow.Worker.Messaging;
 
 namespace OrderFlow.Worker;
@@ -20,11 +21,25 @@ public static class WorkerHost
             .ValidateOnStart();
         builder.Services.AddScoped<OrderExpiryProcessor>();
         builder.Services.AddSingleton<OrderExpiryIteration>();
-        if (builder.Configuration.GetValue("OutboxPublishing:Enabled", false))
+        var publishEvents = builder.Configuration.GetValue("OutboxPublishing:Enabled", false);
+        var notifications = builder.Configuration.GetValue("Notifications:Enabled", false);
+        if (publishEvents || notifications)
         {
             var settings = builder.Configuration.GetSection("RabbitMq").Get<RabbitMqSettings>() ?? new();
             settings.Validate();
             builder.Services.AddSingleton(settings);
+            if (notifications)
+            {
+                var consumerOptions = builder.Configuration.GetSection("Notifications").Get<NotificationConsumerOptions>() ?? new();
+                consumerOptions.Validate();
+                builder.Services.AddSingleton(consumerOptions);
+                builder.Services.AddScoped<NotificationProcessor>();
+                builder.Services.AddSingleton<NotificationDeliveryHandler>();
+                if (runBackgroundJobs) builder.Services.AddHostedService<NotificationConsumerWorker>();
+            }
+        }
+        if (publishEvents)
+        {
             builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
             builder.Services.AddSingleton<OutboxPublishingIteration>();
             if (runBackgroundJobs) builder.Services.AddHostedService<OutboxPublisherWorker>();

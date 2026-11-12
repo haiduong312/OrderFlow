@@ -112,3 +112,9 @@ dotnet test OrderFlow.slnx -c Release --no-build --no-restore --filter 'FullyQua
 ```
 
 The external-service-free filter is now `Category!=PostgreSQL&Category!=RabbitMQ`. RabbitMQ collection prerequisites fail visibly; no broker-less success skip.
+
+## Notification consumer and API tests
+
+NotificationTests uses actual PostgreSQL/RabbitMQ in the Messaging collection, including two real subscriptions with prefetch one. Both distinct contexts rendezvous immediately before the unique inbox INSERT, and a safe post-ACK log signal observes completion. Commit-before-ACK fault injects a failure at the actual ACK boundary, checks committed inbox/notification/outbox through a fresh context, closes the real channel and processes its redelivery. Broker callback/TCS observers see malformed/unsupported/identity/recipient/oversized poison and transient SQL rollback exhaust the finite topology into the dedicated DLQ, without arbitrary sleeps. SQL tests check unique effect, owner correlation, immutable/read/handled marker guards; populated prior-schema migration preserves original events/orders.
+
+NotificationHttpTests uses real cookies/CSRF/Identity and PostgreSQL for list/detail/count/read scoping, Admin/non-owner denial, invalid inputs, duplicate-after-read preservation and two independent read requests rendezvousing before their conditional UPDATE. Service-free parser tests cover seven supported types and fourteen invalid/unsupported cases; composition tests keep opt-in/seed/load bounds explicit. Focused command and exact executed evidence are in [notification runbook](notifications.md) and [status](implementation-status.md). No OS-kill, clustered failover, email/realtime or exactly-once transport claim.
