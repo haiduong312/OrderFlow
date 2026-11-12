@@ -1,6 +1,8 @@
 using OrderFlow.Application.Persistence;
 using OrderFlow.Application.Modules.Ordering;
 using OrderFlow.Application.Modules.Payments;
+using OrderFlow.Application.Messaging;
+using OrderFlow.Worker.Messaging;
 
 namespace OrderFlow.Worker;
 
@@ -18,6 +20,15 @@ public static class WorkerHost
             .ValidateOnStart();
         builder.Services.AddScoped<OrderExpiryProcessor>();
         builder.Services.AddSingleton<OrderExpiryIteration>();
+        if (builder.Configuration.GetValue("OutboxPublishing:Enabled", false))
+        {
+            var settings = builder.Configuration.GetSection("RabbitMq").Get<RabbitMqSettings>() ?? new();
+            settings.Validate();
+            builder.Services.AddSingleton(settings);
+            builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
+            builder.Services.AddSingleton<OutboxPublishingIteration>();
+            if (runBackgroundJobs) builder.Services.AddHostedService<OutboxPublisherWorker>();
+        }
         builder.Services.AddScoped<PaymentSettlementProcessor>();
         if (runBackgroundJobs && builder.Configuration.GetValue("PaymentSettlement:Enabled", false))
             builder.Services.AddHostedService<PaymentSettlementWorker>();

@@ -100,3 +100,15 @@ PaymentCallbackTests uses actual PostgreSQL and real cookie/CSRF setup; the prov
 ## Compensation execution and payment lookup
 
 PaymentRecoveryTests uses independent merchant/provider databases and real simulator HTTP. Refund claim gates count distinct contexts before SELECT FOR UPDATE SKIP LOCKED; callback/lookup races meet before the shared Order lock. A provider-after-effect signal and logical lease advancement test stale completions; cancellation at that boundary models shutdown. Fault injection rejects local success acknowledgement after the provider commit; restart/lookup recovers the same identity. A separate NOWAIT connection proves no merchant refund lock is held over lookup/refund HTTP. Tests check one effective provider refund/capture, local result/outbox, unchanged terminal order/stock disposition, mismatch review, missing/pending/failed lookup and populated migration preservation. One-second transport timeouts intentionally test uncertainty; no arbitrary sleeps claim race correctness. See [recovery guide](payment-recovery.md) and [status](implementation-status.md).
+
+## RabbitMQ publication tests
+
+OutboxPublishingTests uses a separate nonparallel Messaging collection with actual disposable PostgreSQL and RabbitMQ 4.4.0; other PostgreSQL tests do not require a broker. Per-case database/topology names isolate evidence. Tests await real tracked confirms/mandatory returns/queue-full NACKs, not a fake successful publisher. A frame-aware TCP proxy forwards requests to the real broker and drops only confirm frames; after a real timeout/retry, two bodies carry the same EventId. A SQL acknowledgement fault and fake lease time model the post-confirm crash window. Independent contexts rendezvous before SKIP LOCKED; a paused old owner proves fenced completion. A NOWAIT connection probes the claimed row during actual publication, proving no held transaction. Uncommitted outbox rows are invisible. Restart proves persistent queued delivery. Consumer callbacks/TCS observe finite dead lettering without race sleeps. Full process kill, clustered broker partitions and production durability configuration remain unverified. See [runbook](messaging.md) and [status](implementation-status.md).
+
+Focused command:
+
+```bash
+dotnet test OrderFlow.slnx -c Release --no-build --no-restore --filter 'FullyQualifiedName~OutboxPublishingTests|FullyQualifiedName~OutboxCompositionTests|FullyQualifiedName~EventEnvelopeTests'
+```
+
+The external-service-free filter is now `Category!=PostgreSQL&Category!=RabbitMQ`. RabbitMQ collection prerequisites fail visibly; no broker-less success skip.

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Metadata;
 using OrderFlow.Application.Messaging;
 
 namespace OrderFlow.Application.Persistence;
@@ -15,6 +16,7 @@ public sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outbox
             table.HasCheckConstraint("CK_Outbox_Status", "\"Status\" IN ('Pending','InFlight','Published','Failed')");
             table.HasCheckConstraint("CK_Outbox_Lease", "(\"Status\" = 'InFlight' AND \"LeaseOwner\" IS NOT NULL AND length(btrim(\"LeaseOwner\")) > 0 AND \"LeaseToken\" IS NOT NULL AND \"LeaseExpiresAt\" IS NOT NULL AND isfinite(\"LeaseExpiresAt\") AND \"LeaseExpiresAt\" > \"OccurredAt\") OR (\"Status\" <> 'InFlight' AND \"LeaseOwner\" IS NULL AND \"LeaseToken\" IS NULL AND \"LeaseExpiresAt\" IS NULL)");
             table.HasCheckConstraint("CK_Outbox_Published", "(\"Status\" = 'Published' AND \"PublishedAt\" IS NOT NULL AND isfinite(\"PublishedAt\") AND \"PublishedAt\" >= \"OccurredAt\") OR (\"Status\" <> 'Published' AND \"PublishedAt\" IS NULL)");
+            table.HasCheckConstraint("CK_Outbox_Failure", "\"LastFailureAt\" IS NULL OR (isfinite(\"LastFailureAt\") AND \"LastFailureAt\" >= \"OccurredAt\")");
         });
         entity.HasKey(message => message.EventId);
         entity.Property(message => message.EventId).ValueGeneratedNever();
@@ -25,6 +27,14 @@ public sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outbox
         entity.Property(message => message.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
         entity.Property(message => message.LeaseOwner).HasMaxLength(100);
         entity.Property(message => message.LastErrorCode).HasMaxLength(100);
+        entity.Property(message => message.TraceParent).HasMaxLength(55);
+        entity.Property(message => message.TraceState).HasMaxLength(512);
+        entity.Property(message => message.LeaseToken).IsConcurrencyToken();
+        foreach (var name in new[] { nameof(OutboxMessage.EventType), nameof(OutboxMessage.SchemaVersion), nameof(OutboxMessage.Producer),
+            nameof(OutboxMessage.AggregateType), nameof(OutboxMessage.AggregateId), nameof(OutboxMessage.AggregateVersion),
+            nameof(OutboxMessage.CorrelationId), nameof(OutboxMessage.CausationId), nameof(OutboxMessage.Payload),
+            nameof(OutboxMessage.OccurredAt), nameof(OutboxMessage.TraceParent), nameof(OutboxMessage.TraceState) })
+            entity.Property(name).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         entity.HasIndex(message => new { message.Status, message.NextAttemptAt, message.EventId })
             .HasDatabaseName("IX_Outbox_Due");
         entity.HasIndex(message => message.LeaseExpiresAt).HasFilter("\"Status\" = 'InFlight'")

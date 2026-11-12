@@ -187,6 +187,9 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<DateTimeOffset?>("LastFailureAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset?>("LeaseExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -195,6 +198,7 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<Guid?>("LeaseToken")
+                        .IsConcurrencyToken()
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("NextAttemptAt")
@@ -223,6 +227,14 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(55)
+                        .HasColumnType("character varying(55)");
+
+                    b.Property<string>("TraceState")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.HasKey("EventId");
 
                     b.HasIndex("LeaseExpiresAt")
@@ -239,6 +251,8 @@ namespace OrderFlow.Application.Persistence.Migrations
                     b.ToTable("OutboxMessages", "messaging", t =>
                         {
                             t.HasCheckConstraint("CK_Outbox_Attempts", "\"AttemptCount\" >= 0 AND isfinite(\"OccurredAt\") AND isfinite(\"NextAttemptAt\") AND \"NextAttemptAt\" >= \"OccurredAt\"");
+
+                            t.HasCheckConstraint("CK_Outbox_Failure", "\"LastFailureAt\" IS NULL OR (isfinite(\"LastFailureAt\") AND \"LastFailureAt\" >= \"OccurredAt\")");
 
                             t.HasCheckConstraint("CK_Outbox_Lease", "(\"Status\" = 'InFlight' AND \"LeaseOwner\" IS NOT NULL AND length(btrim(\"LeaseOwner\")) > 0 AND \"LeaseToken\" IS NOT NULL AND \"LeaseExpiresAt\" IS NOT NULL AND isfinite(\"LeaseExpiresAt\") AND \"LeaseExpiresAt\" > \"OccurredAt\") OR (\"Status\" <> 'InFlight' AND \"LeaseOwner\" IS NULL AND \"LeaseToken\" IS NULL AND \"LeaseExpiresAt\" IS NULL)");
 

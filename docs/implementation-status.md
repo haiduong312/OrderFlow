@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-11 (Asia/Ho_Chi_Minh). Current milestone: **18 completion — durable full-compensation execution and payment reconciliation**. Refund claim/lookup/delivery/acknowledgement, stable provider identities, bounded backoff/review states, shared callback/lookup settlement and timeout/restart/race tests are implemented. General customer refunds/returns, audited operator replay, generic outbox dispatch, UI and deployment remain outside this milestone.
+Updated: 2026-11-12 (Asia/Ho_Chi_Minh). Current milestone: **14 publisher slice — durable RabbitMQ outbox publication**. Existing committed events now use versioned persistent mandatory/confirmed publication, PostgreSQL owner/token leases and bounded retry/failure evidence. Development Compose and finite durable retry/DLQ topology are added. Business consumers, audited replay, UI and deployment remain outside this milestone; payment/refund recovery from 18 remains implemented.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -43,7 +43,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 11 | Complete Order/item snapshots/lifecycle and transactional events on reservation/Order foundations | 07, 09 | A03, A07, A08 | Creation delivered in 12; cancellation/expiry and fulfillment/history in 13; verified confirmation delivered in 17/18 |
 | 12 | Atomic CreateOrder/reserve + original response; stock/idempotency concurrency and rollback | 08a; checkout portions of 09–11 | A05, A06, A08 creation/replay, A16, A23 | Complete for requested checkout; see evidence and remaining lifecycle work below |
 | 13 | Own order reads/list, pending cancellation/release, requested Admin fulfillment and authorization/race regressions | 12 | A02, A07 release, A08, A09, A15 graph | Complete for requested scope; automatic expiry and payment/capture integration remain later |
-| 14 | Outbox dispatch/inbox and worker lease/retry foundation; expiry worker + deterministic races | 13 | A07–A09, A16–A19 | Expiry slice complete: bounded SKIP LOCKED worker + deterministic races; dispatch/inbox remain pending |
+| 14 | Outbox dispatch/inbox and worker lease/retry foundation; expiry worker + deterministic races | 13 | A07–A09, A16–A19 | Expiry and RabbitMQ publisher slices complete: bounded SKIP LOCKED claims, token leases, confirms/mandatory routing and finite durable retry/DLQ; business-consumer inbox/effects remain 23/24 |
 | 15 | Payment attempt/intention schema, request idempotency, active-attempt constraint, customer start/read | 10; expiry/worker foundations of 14 | A12, A13, A23 | Complete for requested initiation scope; verified settlement remains 17/18 |
 | 16 | Durable gateway simulator, submission/query worker, independent transaction boundary and uncertainty | 15 | A12, A13, A19, A23 | Provider/submission complete; signed receipt/settlement in 17/18 and compensation delivery/lookup now implemented; automatic callback delivery remains later |
 | 17 | Signed callback receipt/inbox, verification, duplicate/quarantine handling and replay tests | 16 | A13, A14 | Complete: signed bounded receipt, exact-byte identity/deduplication, durable inbox and quarantine; see ADR-019 |
@@ -1049,3 +1049,76 @@ No real money/provider, deployed OS-process kill/network partition/uncertain com
 3. **Vì sao reconciliation phải gọi lại settlement chung?** Hiểu lookup không phải quyền bỏ qua order/attempt/amount/currency correlation, order-first decision time, expiry và compensation; provider timestamps không phục hồi tồn kho.
 
 Suggested commit title (none supplied; matches requested scope): `feat: add durable refund execution and payment reconciliation`.
+
+
+## RabbitMQ outbox publication — publisher slice of 14 (2026-11-12)
+
+### Scope and contract clarification
+
+The latest request connects existing events to RabbitMQ rather than implementing the originally planned broker-free local dispatcher. This contradiction was reported before dependent implementation. [ADR-021](adr/0021-rabbitmq-outbox-publication.md) supersedes producer completion waiting for each local consumer: Published now means successful mandatory routing plus broker confirmation only. Each future business consumer still requires its independent inbox/effects transaction before ACK. No notification/reporting handler, general event bus framework, payment/refund rule change, audited replay, API/Worker deployment or customer refund feature is introduced.
+
+Repository instructions, current package locks/migrations/spec/architecture/ADRs and clean initial Git status were inspected. During work global.json was independently changed from SDK 10.0.114 to installed 10.0.115; that user change is preserved. This milestone adds only RabbitMQ.Client 7.2.2 and its generated Worker/Integration dependency lock changes. Broker 4.4.0-management digest was pulled/verified against official sources; EF/ASP.NET/Npgsql pins remain unchanged. Version-sensitive async confirm/return/concurrency behavior was checked against official 7.2.2 source and RabbitMQ documentation linked in ADR-021.
+
+### Acceptance delivered
+
+| Criterion | Evidence/behavior |
+| --- | --- |
+| Existing events/checkout boundary | Producers unchanged; independent publisher sees only committed rows; rollback creates no external delivery. Real authenticated checkout returns 201 during broker failure and preserves its event for later confirmed publication |
+| Versioned stable envelope | EnvelopeVersion 1, EventId/type/schema/time, aggregate/version, correlation/causation and optional persisted producer W3C trace; payload is an object with unchanged money strings; same identity/body on retries |
+| Bounded PostgreSQL claims | One row per short FOR UPDATE SKIP LOCKED transaction, 20 items/pass; unique owner/token, 60-second lease and separate bounded exhausted-lease cleanup; independent contexts reach the contested statement |
+| Transaction/network separation | Claim scope commits/disposes before actual broker I/O; independent NOWAIT probe can lock claimed row during publish; new result scope |
+| Conditional completion | Status/owner/token/live expiry predicate; old publisher cannot acknowledge a newer/expired claim; Published/envelope SQL facts cannot regress |
+| Durable broker handoff | Durable topic exchanges, quorum queues and bindings declared before persistent mandatory publish; 7.2.2 tracked confirms reject returns/NACKs; Published only after awaited success |
+| Bounded failure recovery | Eight claims maximum; scheduled 5/15/30/60/120/300/600/600-second backoff; permanent configuration/payload failures and exhaustion retain Failed; unknown failures/shutdown leave recoverable leases |
+| Uncertainty/duplicates | Real broker ACK dropped by frame-aware proxy -> actual timeout -> same-ID/body duplicate after retry; broker success followed by failed local SQL ACK also recovers by lease |
+| Async/channel ownership | One gated channel with no concurrent frame publishing, fresh reconnect/redeclare after classified failures; 12 concurrent publisher calls verified; cancellation propagates |
+| Finite retry/dead letter | Four durable queues, one delayed retry-work stage then parked dead queue; delivery limit five, max length/reject-publish, at-least-once quorum dead lettering; actual rejection/TTL/parking test has no requeue cycle |
+| Restart/upgrades | Persistent queued event survives broker restart; populated previous-schema outbox survives additive migration/reapplication and publishes original identity |
+| Development/operations | Private secret-file wrapper, loopback ports, stable-node named volume/health check; opt-in Worker only; [runbook](messaging.md) covers unavailable/routing/NACK/timeout/config/Failed/DLQ recovery without invented replacement IDs |
+
+### Luồng chính (Vietnamese)
+
+Checkout và các lệnh nghiệp vụ chỉ ghi OutboxMessages trong transaction PostgreSQL cùng order/stock/history. Broker tắt không làm checkout thất bại. Worker lấy một event đến hạn bằng SKIP LOCKED, lưu owner/token/lease 60 giây và tăng lượt, rồi commit và giải phóng context. Sau đó mới kết nối RabbitMQ, khai báo exchange/queue/binding durable, gửi message persistent + mandatory và chờ tracked confirm. Transaction không bị giữ trong lúc chờ mạng.
+
+Khi broker xác nhận và không trả unroutable/NACK, một câu UPDATE mới chỉ chuyển Published nếu owner/token/lease vẫn hợp lệ. Lỗi transient quay về Pending với NextAttemptAt; lỗi permanent hoặc hết tám lượt giữ Failed để xem xét. Nếu ACK hoặc SQL acknowledgement bị mất, lease hết hạn cho phép gửi lại cùng EventId/body. Vì thế delivery là at least once; consumer tương lai phải dedup bằng inbox riêng. Confirm không chứng minh email/reporting/nghiệp vụ downstream đã xong.
+
+Topology có đường hữu hạn main work -> delay TTL -> retry-work -> dead queue, không tự quay vòng. Message lỗi được giữ để điều tra; chưa có consumer nghiệp vụ hoặc công cụ audited redrive. Một semaphore chỉ bảo vệ thứ tự frame trên IChannel; PostgreSQL mới bảo vệ claim giữa nhiều process.
+
+### Important files and migration
+
+- Application/Messaging/EventEnvelope + OutboxMessage: transport contract, typed publish failures and producer trace snapshots.
+- Application/Messaging/OutboxPublishingIteration: claim/commit, external publication, token-fenced SQL success/backoff/failure and exhausted-lease recovery.
+- Worker/Messaging/RabbitMqSettings, RabbitMqTopology, RabbitMqEventPublisher, OutboxPublisherWorker; WorkerHost/appsettings: opt-in composition, bounded async loop, real client/topology and safe channel ownership.
+- Migration **20261112030213_AddOutboxPublishing**, designer/snapshot and OutboxMessageConfiguration: additive nullable failure/trace fields, EF lease concurrency/immutable envelope metadata, SQL identity/Published/attempt guards and no-delete/no-truncate protection. Down refuses evidence loss. Existing rows retain original identity/data with optional trace null. No developer migration/data reset.
+- compose.yaml, infra/rabbitmq/entrypoint.sh, .env.example, central package version and generated locks.
+- Messaging integration collection/server, ConfirmDroppingProxy, OutboxPublishingTests, OutboxCompositionTests, EventEnvelopeTests and migration-count regression (9 -> 10).
+- [Messaging runbook](messaging.md), [ADR-021](adr/0021-rabbitmq-outbox-publication.md), current architecture/spec/persistence/testing/README and this status.
+
+### Verification evidence
+
+All .NET commands used DOTNET_CLI_HOME=/tmp/orderflow-callbacks/dotnet-home and NUGET_PACKAGES=/tmp/orderflow-callbacks/packages. Logs/TRX/SQL are under /tmp/orderflow-outbox; commands used installed SDK 10.0.115 matching the independently updated global.json. Actual PostgreSQL/RabbitMQ tests use disposable owned infrastructure; no developer database migration or volume reset.
+
+1. Restored the added pinned package/generated locks, then final `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-outbox/artifacts --disable-parallel -m:1` — exit 0, all six projects, auditing enabled; `/tmp/orderflow-outbox-restore-locked.log`.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-outbox/artifacts -m:1` — exit 0, **0 warnings/errors**; `/tmp/orderflow-outbox-build-final.log`.
+3. `dotnet ef migrations add AddOutboxPublishing --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output-dir Persistence/Migrations` with matching ArtifactsPath/design-only connection — generated additive migration, then reviewed/customized immutable/retention guards; `/tmp/orderflow-outbox-migration.log`. The populated prior-schema upgrade/reapplication and original event publication pass in the full suite.
+4. Focused `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-outbox/artifacts --filter 'FullyQualifiedName~OutboxPublishingTests|FullyQualifiedName~OutboxCompositionTests|FullyQualifiedName~EventEnvelopeTests' --logger 'trx;LogFilePrefix=outbox-focused-final' --results-directory /tmp/orderflow-outbox/results` initially passed 20/21 after expanding acceptance: the remaining SQL guard test used unescaped literal JSON braces in ExecuteSqlRaw and failed in EF formatting before SQL. Corrected escaping; the final full run below includes the passing test. Earlier fixture startup failed because root diagnostics created a root-owned Erlang cookie; switched test readiness to server log/TCP and Compose diagnostics to gosu rabbitmq. Earlier NACK test incorrectly assumed the second publish must exceed quorum max-length; now it observes an actual NACK before checking outbox state. Both corrected tests pass with actual broker, without sleeps/fake success. Prior diagnostic logs retained under /tmp/orderflow-outbox-*.
+5. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-outbox/artifacts -m:1 --logger 'trx;LogFilePrefix=outbox-full' --results-directory /tmp/orderflow-outbox/results` — exit 0, **361 integration + 129 unit = 490 passed**, **0 failed/skipped**. Includes **16 new real PostgreSQL/RabbitMQ cases**, one composition case and four envelope cases; baseline was 469. Integration duration 3m17s. Evidence `/tmp/orderflow-outbox-full.log`; TRX `outbox-full_net10.0_20261112101632.trx` and `outbox-full_net10.0_20261112101633.trx`. No production code changed after this full run.
+6. `dotnet ef migrations has-pending-model-changes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` with ArtifactsPath=/tmp/orderflow-outbox/artifacts and nonconnecting design connection — exit 0, **no model drift**, `/tmp/orderflow-outbox-drift.log`. `dotnet ef migrations script --idempotent --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output /tmp/orderflow-outbox/migrations.sql` — exit 0; reviewed additive trace/failure columns and identity/Published/retention SQL guards; `/tmp/orderflow-outbox-script.log`.
+7. Committed Compose `config --quiet` — exit 0. Literal `up` failed because this Snap Docker daemon cannot see the session's /tmp bind-secret path (same infrastructure limitation recorded in 03). A **temporary verification-only override** removed bind mounts; `compose create`, `docker cp` of the exact committed entrypoint and temporary private secret, then `compose start --wait --wait-timeout 90 rabbitmq` — healthy. No credentials were embedded in override/output. Actual `rabbitmq-diagnostics -q ping` succeeded and private management API authentication for orderflow vhost returned **200**. Same image/hostname/ports/volume/script/health configuration exercised; literal bind mounting remains unverified in this daemon. Logs `/tmp/orderflow-outbox-compose*.log`. Cleanup `compose down` without --volumes preserves the dedicated `orderflow-outbox-check_rabbitmq_data` volume; no developer data touched.
+8. `sh -n infra/rabbitmq/entrypoint.sh` and `git diff --check` — exit 0. Local Markdown targets/config parsing and final Git diff reviewed; no generated artifacts/private secrets added. No commit/push/deploy.
+
+Unverified: production clustered broker failover, partitions, independent OS-kill/uncertain PostgreSQL commit, TLS/runtime permissions, real business consumers and audited redrive. The tested crash windows use local SQL acknowledgement failure and deterministic lease advancement; they do not claim a killed process or end-to-end exactly-once.
+
+### Manual verification and limits
+
+Follow [messaging setup and recovery](messaging.md): create private broker/DB secrets once, start Compose, explicitly migrate, privately configure Worker RabbitMq password and enable OutboxPublishing. Stop only the broker; perform authenticated checkout and inspect Pending. Restart broker; inspect same EventId becoming Published and the durable integration queue gaining the persistent envelope. Observe expiry/backoff and duplicate identity in the focused acceptance tests. Never manually set Published or create a new EventId to repair uncertainty.
+
+The integration queue is deliberately undrained until business consumers ship in 23/24; it is a real durable destination, not a claim that notifications/reporting execute. Hardcoded versioned queue arguments simplify repeatable setup but incompatible changes require a forward drain/migration plan. One-node development quorum persistence has no multi-node HA guarantee. Automatic publication stops at eight claims; Failed/DLQ rows remain for review and future audited same-identity replay (28). Evidence retention prevents destructive downgrade/pruning; a reviewed future archival policy is needed. Production TLS/runtime roles, broker clustering/partition/OS-kill behavior, business consumers and end-to-end exactly-once are not claimed. No user data/volume was reset or commit/push/deploy performed.
+
+### Three interview questions
+
+1. **Vì sao publish ngoài transaction và chỉ ghi Published sau confirm?** Hiểu outbox giữ checkout độc lập broker và tránh mất event khi commit/network lỗi; broker confirm chỉ là handoff.
+2. **Lease token có ngăn gửi trùng không?** Không; nó chặn acknowledgement cũ ở PostgreSQL. Mất confirm vẫn có thể phát trùng, cần EventId ổn định và consumer inbox/effect transaction.
+3. **Mandatory khác confirm, và DLQ khác retry thế nào?** Mandatory phát hiện không có route; confirm phản ánh broker nhận/chấp nhận. Backoff outbox và finite delay/retry-work/DLQ xử lý hai giai đoạn khác nhau, không dùng vòng requeue vô hạn.
+
+Suggested commit title (none supplied): `feat: publish durable outbox events to RabbitMQ`.

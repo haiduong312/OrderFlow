@@ -22,9 +22,9 @@ Records below are accepted design decisions; each record supplies its decision d
 | [ADR-016](0016-order-management-transitions.md) | Owner-scoped order views, effective expiry, serialized cancellation/release and Admin fulfillment with preserved status history |
 | [ADR-017](0017-order-expiry-worker.md) | Bounded per-order SKIP LOCKED expiry, shared release logic and System audit actors |
 | [ADR-018](0018-payment-initiation-and-simulator.md) | Durable payment attempts, fenced gateway observations and restricted separate simulator host |
-
 | [ADR-019](0019-signed-payment-settlement.md) | Signed raw-byte callback receipts, monotonic captures, atomic consumption/confirmation and unique compensation intentions |
-
 | [ADR-020](0020-refund-execution-and-payment-reconciliation.md) | Durable full-compensation execution, lookup settlement, shared lease fencing and provider-dependent recovery guarantees |
+
+| [ADR-021](0021-rabbitmq-outbox-publication.md) | RabbitMQ mandatory/confirmed outbox handoff, fenced leases and finite durable retry topology |
 
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

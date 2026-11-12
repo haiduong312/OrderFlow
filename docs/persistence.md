@@ -1,10 +1,10 @@
 # PostgreSQL persistence — milestones 03/07/08/12/13
 
-One scoped OrderFlowDbContext contains Identity and the three durable reliability stores. Milestone 07 adds Catalog Products/Categories with explicit mappings/migration. Milestone 08 adds Inventory balances/StockMovements with initialization and append-only triggers. Milestone 12 adds Orders/OrderItems/OrderHistory and Active InventoryReservations via AddCheckout. No payment entity, broker, dispatcher, lease-claim worker or automatic startup migration/seed exists. See [checkout](checkout.md) for its transaction walkthrough and schema guards. Milestone 04 uses the existing Identity storage for [browser authentication and opt-in development accounts](authentication.md); no additional migration is needed. See [ADR-009](adr/0009-postgresql-reliability-foundations.md), [architecture](architecture.md), and [implementation status](implementation-status.md).
+One scoped OrderFlowDbContext contains Identity and the three durable reliability stores. Milestone 07 adds Catalog Products/Categories with explicit mappings/migration. Milestone 08 adds Inventory balances/StockMovements with initialization and append-only triggers. Milestone 12 adds Orders/OrderItems/OrderHistory and Active InventoryReservations via AddCheckout. Later milestones add payment/refund recovery and the RabbitMQ outbox publisher; see their runbooks. Automatic startup migration/seed remains disabled. See [checkout](checkout.md) for its transaction walkthrough and schema guards. Milestone 04 uses the existing Identity storage for [browser authentication and opt-in development accounts](authentication.md); no additional migration is needed. See [ADR-009](adr/0009-postgresql-reliability-foundations.md), [architecture](architecture.md), and [implementation status](implementation-status.md).
 
 ## Local PostgreSQL only
 
-Use Docker Engine with Compose v2+ (the `!reset` verification workaround described in status is not needed for a normal local daemon). The committed [compose.yaml](../compose.yaml) has a single `dev` profile service: PostgreSQL **18.6-bookworm**, pinned to the pulled official multi-platform digest. It binds only loopback, uses a named volume and `pg_isready` health checks. No API, worker, broker or admin UI container is started.
+Use Docker Engine with Compose v2+ (the `!reset` verification workaround described in status is not needed for a normal local daemon). The committed [compose.yaml](../compose.yaml) includes a `dev` PostgreSQL service: PostgreSQL **18.6-bookworm**, pinned to the pulled official multi-platform digest. It binds only loopback, uses a named volume and `pg_isready` health checks. The `dev` profile also includes RabbitMQ; use `up -d postgres` for PostgreSQL alone. See [messaging](messaging.md) for broker setup. No API/Worker container is added.
 
 From repository root in Bash, prepare a private random credential once:
 
@@ -16,7 +16,7 @@ fi
 export ORDERFLOW_DB_PASSWORD_FILE="$PWD/.local/postgres-password"
 export ORDERFLOW_DB_PORT=5432
 docker compose --profile dev config --quiet
-docker compose --profile dev up -d --wait --wait-timeout 90
+docker compose --profile dev up -d --wait --wait-timeout 90 postgres
 ```
 
 `.local/` is ignored. Do not overwrite an existing credential file, print its contents, use shell tracing with secrets, or commit real connection strings. The Compose secret file is mounted at `/run/secrets/postgres_password`; the password is not embedded in YAML or sample configuration. The daemon must see that host file: remote/isolated Docker daemons need their own secret-injection setup. `pg_isready` means the server accepts connections, not that application migrations or runtime credentials are correct.
@@ -31,7 +31,7 @@ Configuration is read from standard .NET providers. Hosts resolve a scoped conte
 
 ## Dedicated migration step
 
-Install SDK 10.0.114, then run:
+Install the SDK pinned in global.json, then run:
 
 ```bash
 dotnet tool restore
@@ -86,13 +86,13 @@ No idempotency lease is necessary: a future command claims the unique identity a
 
 CreateOrder uses operation `CreateOrder:v1`. The existing order-scoped payment-request namespace can be represented by operation `StartPayment:v1/{orderId:D}` (within 100 characters), keeping the same user+operation+key index; payment behavior is not implemented yet. This generalizes the planned CreateOrderRequests/PaymentRequests stores rather than creating duplicate response caches. Later order/payment associations can add real FKs when those entities exist.
 
-### Outbox/inbox storage, not publishing
+### Outbox/inbox storage and publication
 
 Outbox states: Pending/InFlight/Published/Failed. Inbox states: Pending/InFlight/Processed/Failed. CHECKs require valid states, positive schema/aggregate versions, object-shaped jsonb, nonnegative attempts, finite/due timestamps, a full lease tuple only while InFlight, and the correct terminal timestamp only while Published/Processed. Expired leases remain valid rows; no CHECK compares to the moving wall clock. Attempt count is not a promise of exactly-once execution.
 
 Payload hashes are 32 bytes; callers define/hash the canonical or original authenticated message representation and compare it on duplicate identity. JSONB may normalize whitespace/property order, so it is not a byte-for-byte original-request store. Do not store signing secrets or sensitive payment details in payloads/error text. LastErrorCode stores classified codes, not raw exception dumps.
 
-Inbox has **no FK to outbox**: an incoming external message need not be a locally produced event. A message ID can be handled by different consumer names, each once durably; the PK arbitrates duplicate inserts. Message state/effects can share one transaction with business writes. Due-work and partial expired-lease indexes support future bounded queue claims. No claim/renew/ack loop, broker publishing, retries, callbacks or delivery-success simulation exists here. Future handlers must use row guards/lease-token comparisons and consumer deduplication in the same transaction, and acknowledge producer delivery only after required consumers accept it durably. Schema fields alone do not implement that protocol.
+Inbox has **no FK to outbox**: an incoming external message need not be a locally produced event. A message ID can be handled by different consumer names, each once durably; the PK arbitrates duplicate inserts. Message state/effects can share one transaction with business writes. Due-work and partial expired-lease indexes support bounded publisher claims. The [RabbitMQ publisher](messaging.md) now uses short claims, network outside transactions and owner/token/expiry-guarded completion. Published is broker routing/confirmation only, independent from each consumer inbox. Future business handlers must deduplicate inbox/effects in the same transaction before manual broker ACK. AddOutboxPublishing retains legacy rows and adds LastFailureAt and persisted W3C trace fields, immutable envelope/Published guards and no-delete/no-truncate evidence protection.
 
 ## Inspect and test real PostgreSQL
 
@@ -127,7 +127,7 @@ For a fresh disposable workspace while preserving old data, use a new project na
 
 ```bash
 export ORDERFLOW_DB_PORT=55432
-docker compose -p orderflow-fresh --profile dev up -d --wait
+docker compose -p orderflow-fresh --profile dev up -d --wait postgres
 ```
 
 Update the private connection/test settings to that port, then run the dedicated migration/seed steps. The original project volume remains untouched.

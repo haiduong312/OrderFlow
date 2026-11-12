@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace OrderFlow.Application.Messaging;
 
 public enum OutboxStatus { Pending, InFlight, Published, Failed }
@@ -23,4 +25,9 @@ public sealed class OutboxMessage
     public DateTimeOffset? LeaseExpiresAt { get; set; }
     public DateTimeOffset? PublishedAt { get; set; }
     public string? LastErrorCode { get; set; }
+    public DateTimeOffset? LastFailureAt { get; set; }
+    // Capture producer context once; publisher retries must not replace it with their own trace.
+    public string? TraceParent { get; set; } = Activity.Current?.IdFormat == ActivityIdFormat.W3C ? Activity.Current.Id : null;
+    public string? TraceState { get; set; } = Activity.Current?.IdFormat == ActivityIdFormat.W3C
+        && Activity.Current.TraceStateString is { Length: <= 512 } state ? state : null;
 }

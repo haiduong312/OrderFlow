@@ -21,9 +21,39 @@ services:
       start_period: 5s
     stop_grace_period: 30s
 
+  rabbitmq:
+    profiles: ["dev", "messaging"]
+    image: rabbitmq:4.4.0-management@sha256:af6f50d38098d8bd52fef7f3fa85015dd8b2bf6def58e995bf584ae9ba0f6407
+    hostname: orderflow-rabbitmq
+    entrypoint: ["/bin/sh", "/usr/local/bin/orderflow-rabbitmq-entrypoint.sh"]
+    command: ["rabbitmq-server"]
+    environment:
+      RABBITMQ_DEFAULT_USER: orderflow_dev
+      RABBITMQ_DEFAULT_VHOST: orderflow
+      RABBITMQ_NODENAME: rabbit@orderflow-rabbitmq
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2 +SDcpu 1 +SDio 1"
+    secrets:
+      - rabbitmq_password
+    ports:
+      - "127.0.0.1:${ORDERFLOW_RABBIT_PORT:-5672}:5672"
+      - "127.0.0.1:${ORDERFLOW_RABBIT_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./infra/rabbitmq/entrypoint.sh:/usr/local/bin/orderflow-rabbitmq-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD", "gosu", "rabbitmq", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 30s
+
 secrets:
+  rabbitmq_password:
+    file: ${ORDERFLOW_RABBIT_PASSWORD_FILE:-./.local/rabbitmq-password}
   postgres_password:
     file: ${ORDERFLOW_DB_PASSWORD_FILE:?Set ORDERFLOW_DB_PASSWORD_FILE to a private password file}
 
 volumes:
+  rabbitmq_data:
   postgres_data:

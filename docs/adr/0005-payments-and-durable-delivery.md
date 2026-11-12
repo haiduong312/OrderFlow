@@ -1,6 +1,6 @@
 # ADR-005: Simulated payments, compensation, and at-least-once delivery
 
-Date: 2026-10-30. Status: Accepted.
+Date: 2026-10-30. Status: Accepted; broker choice/local delivery completion superseded by [ADR-021](0021-rabbitmq-outbox-publication.md). Payment and at-least-once principles remain in force.
 
 ## Context
 

@@ -171,6 +171,7 @@ Every integration event has an immutable envelope:
 
 ```json
 {
+  "envelopeVersion": 1,
   "eventId": "<uuid>",
   "eventType": "ordering.order-confirmed",
   "schemaVersion": 1,
@@ -181,6 +182,8 @@ Every integration event has an immutable envelope:
   "aggregateVersion": 2,
   "correlationId": "<uuid>",
   "causationId": "<command-or-event-uuid>",
+  "traceParent": "<optional-producer-W3C-traceparent>",
+  "traceState": null,
   "data": {}
 }
 ```
@@ -249,3 +252,9 @@ The separate Worker now finalizes due PendingPayment orders with one SKIP LOCKED
 ## Durable recovery implementation (18 completion)
 
 [ADR-020](adr/0020-refund-execution-and-payment-reconciliation.md) and [recovery guide](payment-recovery.md) implement full-compensation execution and payment status reconciliation through the gateway. Refund Pending includes uncertain delivery with durable backoff/error, Succeeded is terminal, and NeedsReview stops unresolved/rejected work after bounded delivery; this replaces the earlier planned separate Unknown/Failed refund states. Claim/commit -> lookup/refund outside transaction -> token-fenced result persistence uses stable provider identities. Reconciliation invokes the exact same order-first PaymentSettlement as callbacks and never bypasses stored ownership/amount/currency/attempt correlation or expiry. Lookup captures explicitly have Source=ProviderLookup and no invented provider event/occurrence time. No general customer refunds/returns or generic outbox dispatch is added. External safety requires provider idempotency, capture uniqueness, durable lookup and identity retention; no universal exactly-once external guarantee is claimed.
+
+## RabbitMQ publication clarification — publisher slice of 14
+
+[ADR-021](adr/0021-rabbitmq-outbox-publication.md) implements producer-to-broker publication of existing committed outbox events. EnvelopeVersion=1 versions the transport contract independently of SchemaVersion for data; optional producer-time W3C trace context survives retries. The producer row is Published only after persistent mandatory publication to declared durable exchange/queue/binding receives a positive tracked broker confirm without return. This says nothing about business-consumer completion. Unroutable/NACK/unavailable results never become Published; uncertain confirmation/local acknowledgement loss can deliver the same EventId again. PostgreSQL claims are bounded and token/owner/expiry fenced, transient retries back off and stop at eight; failed rows are retained for review. Checkout never calls RabbitMQ.
+
+The finite durable work/delay/retry/dead topology is available now; notification/reporting consumers and their transactional inbox/effect implementation remain milestones 23/24. They must deduplicate the original EventId, tolerate reordering, explicitly ACK after their own commit and avoid immediate infinite requeue. See [messaging recovery operations](messaging.md).
