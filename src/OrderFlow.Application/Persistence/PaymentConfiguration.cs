@@ -32,6 +32,7 @@ public sealed class PaymentAttemptConfiguration : IEntityTypeConfiguration<Payme
         b.HasIndex(x => new { x.Provider, x.ProviderRequestKey }).IsUnique();
         b.HasIndex(x => new { x.Provider, x.ProviderTransactionId }).IsUnique().HasFilter("\"ProviderTransactionId\" IS NOT NULL");
         b.HasIndex(x => x.OrderId).IsUnique().HasFilter("\"Status\" IN ('Queued','Pending','Unknown')").HasDatabaseName("UX_PaymentAttempts_ActiveOrder");
+        b.HasIndex(x => new { x.OrderId, x.CreatedAt, x.Id }).HasDatabaseName("IX_PaymentAttempts_Order_CreatedAt_Id");
         b.HasIndex(x => new { x.NextAttemptAt, x.Id }).HasFilter("\"Status\" IN ('Queued','Pending','Unknown') AND NOT \"NeedsAttention\"");
         b.Property(x => x.LeaseToken).IsConcurrencyToken();
         foreach (var name in new[] { nameof(PaymentAttempt.OrderId), nameof(PaymentAttempt.Provider), nameof(PaymentAttempt.ProviderRequestKey), nameof(PaymentAttempt.Amount), nameof(PaymentAttempt.Currency), nameof(PaymentAttempt.CreatedAt) })

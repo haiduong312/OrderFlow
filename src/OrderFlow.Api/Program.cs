@@ -10,6 +10,7 @@ using OrderFlow.Api.Payments;
 using OrderFlow.Api.Realtime;
 using OrderFlow.Application.Modules.Emails;
 using OrderFlow.Application.Modules.Notifications;
+using OrderFlow.Application.Modules.Reporting;
 
 namespace OrderFlow.Api;
 
@@ -29,6 +30,8 @@ public class Program
         builder.Services.AddScoped<NotificationService>();
         builder.Services.AddScoped<CheckoutService>();
         builder.Services.AddScoped<OrderReadService>();
+        builder.Services.AddScoped<ReportingService>();
+        builder.Services.AddScoped<AdminAuditService>();
         builder.Services.AddScoped<OrderLifecycleService>();
         builder.Services.AddScoped<PaymentInitiationService>();
         builder.Services.AddSingleton(_ => PaymentCallbackSettings.Read(builder.Configuration));

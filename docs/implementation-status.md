@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-13 (Asia/Ho_Chi_Minh). Current milestone: **supplemental catalog detail caching — complete implementation with optional distributed-only Redis cache-aside**. Public product/category details use catalog-only bounded payloads, source-anchored 30-second deadlines and postcommit invalidation. Availability/checkout remain PostgreSQL-authoritative. No L1, filtered-list/private caching, schema migration or frontend is added. See the final milestone section for exact execution evidence and limitations. Prior milestone 23 realtime backend remains implemented; its frontend/proxy/shared-key deployment work remains deferred as previously recorded.
+Updated: 2026-11-13 (Asia/Ho_Chi_Minh). Current milestone: **24 backend — direct Admin reporting and read-only audit**. Implements distinct paid sales/recorded captures/succeeded refunds/net, UTC ranges, current status counts, top products, actionable low stock and bounded safe audit. ADR-026 replaces the planned reporting event projection with direct PostgreSQL snapshots. Report UI and existing frontend/proxy/shared-key/runtime-role deployment remain deferred; previous caching/realtime work is preserved. See the final milestone section for exact checks and limitations.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -53,7 +53,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 21 | Checkout UI, pending key/body recovery, authoritative order/deadline/payment/cancel views | 18, 20 | A03, A20 | Pending |
 | 22 | Admin catalog/stock/order/fulfillment UI with state/version conflict handling | 09, 19, 20 | A20 | Pending |
 | 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Complete for notification/email/realtime backend slices: durable consumers/owner APIs, leased local SMTP/admin recovery and API SignalR/Redis hints; frontend integration remains a later 23 slice, production mail/proxy/general replay later |
-| 24 | Versioned reporting projection, daily winning sales, range/auth tests and report UI | 19, 20, 23 | A17, A18, A21 | Pending |
+| 24 | Direct bounded Admin reports/audit, explicit financial semantics, UTC/money/auth/snapshot tests and measured read indexes; report UI later | 08a, 18, 19 backend | A02, A03, A16 read, A21, A23 | Backend complete under ADR-026; no reporting event projection/consumer; report UI remains pending on 20 |
 | 25 | Reproducible API/client/worker/proxy local composition, migration command, runtime DB roles and readiness | 22, 24 | A01, A16, A22 | Pending |
 | 26 | Deployment hardening/shared protected Data Protection keys; SignalR proxy affinity/Upgrade/trusted forwarded headers; multi-worker/crash/uncertain commit/stale lease fault suite; retry/no-network-in-transaction evidence | 04, 18, 23, 24, 25 | A02, A12, A17–A19, A22, A23 | Pending |
 | 27 | Browser acceptance flows; cross-user/CSRF/auth regressions; structured redaction/config checks | 21, 22, 25, 26 | A02, A20, A22 | Pending |
@@ -1420,3 +1420,75 @@ Product hit still needs one live inventory SELECT. A cold product miss needs 3 q
 3. **Cache giảm query nào và vì sao checkout không dùng nó?** Category detail giảm 10 SELECT xuống 1 trong phép đo; product vẫn đọc inventory, miss còn tăng round trip. PostgreSQL mới quyết định giá/eligibility/reservation trong transaction.
 
 Suggested commit title (none supplied): `feat(catalog): add bounded Redis cache-aside for public details`.
+
+
+## Milestone 24 backend — direct Admin reporting and read-only audit (2026-11-13)
+
+### Inspection, scope and decisions
+
+Inspected AGENTS.md, clean Git status (main ahead by one existing user commit), current catalog/cache/order/history/inventory/payment/refund services and DTOs, authorization/HTTP composition, PostgreSQL harness, package pins and existing migrations/indexes/financial guards. Preserved the prior caching commit and unrelated work. No subagents, commit/push/deployment/history rewrite or developer-data reset.
+
+The original contract/ADR-001/005/roadmap 24 required an event-fed reporting projection/checkpoint. Reported that contradiction before dependent work and recorded the latest request's direct-query preference in [ADR-026](adr/0026-direct-admin-reporting.md), spec, architecture and roadmap. This backend slice depends on existing order/payment/inventory/auth foundations, not the pending React UI. No reporting schema/table, consumer, cache, event-sourced platform or new package. SDK **10.0.115**, runtime **10.0.15**, EF/Identity/tool **10.0.14**, Npgsql **10.0.3** and all lockfiles unchanged.
+
+### Completed acceptance
+
+| Requirement | Implemented behavior / evidence |
+| --- | --- |
+| Paid sales / captured funds / refunds / net | PaidSales sums immutable line totals for allocated winning captures; CapturedRevenue sums all verified captures; Refunds only Succeeded by completion day; signed net is captured-refunded. Created/unpaid attempts do not generate revenue |
+| UTC/date semantics | Required UTC dates [from,to), max 366 days, zero-filled daily results; one-microsecond-before/from/exclusive-to cases, capture-vs-created dates, DB session timezone independence and UI UTC/local guidance |
+| Counts / top / low stock | Current persisted status of orders created in range; top paid quantities/line values with bounded deterministic ranking; active catalog OnHand-Reserved <= threshold, paginated/inclusive and category archival tested |
+| Efficient direct reads | Parameterized PostgreSQL numeric aggregates through EF SqlQuery; database group/filter before materialization, EF projected audit/count/stock; no floating-point or whole entity graphs |
+| Consistent bounded audit | Repeatable Read/READ ONLY, per-request scoped context, sequential queries/cancellation/5s lock/20s statement budgets, max 100 pagesize/checked offsets; controlled writer proves count/page snapshot consistency |
+| Safe Admin audit | Nine GET endpoints total (four reports/five audit), strict existing Admin policy/no-store; history, stock ledger, attempt/capture/refund states exposed through whitelists without provider keys/raw data/leases/secrets or audit edit routes |
+| Customer boundaries | Every report/audit rejects anonymous 401 and Customer 403; own-order Admin audit also 403; another owner's existing Customer order detail remains 404 |
+| Measured indexes / upgrade | 100,000-row selective date/order patterns compared before/after, all five actual report SQL plans inspected; five additive indexes only, no speculative low-stock expression index; populated upgrade preserves IDs/money |
+| Replay scope | No reporting projection exists; no reporting inbox/checkpoint fiction. Existing unique capture/refund identities are read once; replaying source settlement does not add report contributions |
+
+### Luồng chính (tiếng Việt)
+
+Admin gọi controller có policy AdminAccess. Service kiểm tra UTC from/to, paging/limit rồi mở transaction chỉ đọc Repeatable Read bằng DbContext của request. Sales tổng hợp numeric trong PostgreSQL: capture được tính riêng, winning sale lấy LineTotal bất biến, refund chỉ tính khi Succeeded. Không join nhiều item để nhân số tiền capture. .NET chỉ format decimal thành chuỗi invariant, kể cả net âm. Counts/top/low-stock có semantics riêng, không lấy Completed làm điều kiện đã thanh toán.
+
+Audit chỉ SELECT các trường được phép, count/page cùng snapshot và trả observedAt theo clock đã inject. Đây là thời điểm server quan sát, không phải checkpoint hay mốc commit chính xác. Category/product hiện tại chỉ dùng làm nhãn/điều kiện low-stock; giá lịch sử không đọc từ catalog. Không có worker/projection/cache/report write; checkout/payment vẫn giữ luồng transaction hiện có.
+
+Ví dụ fixture: winning sales 25.00 + 0.30 ngày 02/01 UTC; late capture của đơn Cancelled 12.50 ngày đó; refund Succeeded ngày 03/01. PaidSales=25.30, CapturedRevenue=37.80, Refunds=12.50, NetRevenue=25.30 cho cả hai ngày. Riêng ngày refund có net=-12.50 nhưng PaidSales=0.00. Pending/NeedsReview không giả thành tiền đã hoàn.
+
+### Important files / migration
+
+- Application/Modules/Reporting/ReportContracts.cs: bounded UTC dates, exact signed report-money formatting, explicit safe DTOs.
+- Application/Modules/Reporting/ReportingService.cs: financial SQL/CTE, status/top/low-stock projections and read snapshot lifetime.
+- Application/Modules/Reporting/AdminAuditService.cs: ranged/paginated whitelisted history/attempt/capture/refund/stock reads.
+- Api/Reporting/AdminReportsController.cs, AdminAuditController.cs and Program.cs: strict Admin/no-store GET composition.
+- Persistence Payment/Settlement/Inventory configurations; migration **20261113082834_AddReportingReadIndexes** + generated designer/model snapshot: five indexes, no business model/data rewrite.
+- IntegrationTests/Reporting/ReportingScenario.cs, ReportingTests.cs, ReportingQueryPlanTests.cs; UnitTests/ReportingRulesTests.cs; existing PersistenceTests migration count/latest identity updated from 12 to 13.
+- [Runbook](reporting.md), [ADR-026](adr/0026-direct-admin-reporting.md), spec/architecture/status/testing/persistence/README and ADR index. No package/lockfile changes.
+
+### Exact execution and results
+
+Tooling: DOTNET_CLI_HOME=/tmp/orderflow-reporting/dotnet-home, DOTNET_CLI_TELEMETRY_OPTOUT=1, existing user NuGet cache; all binaries/TRX/SQL/plans outside the repository under /tmp/orderflow-reporting. Actual disposable PostgreSQL 18.6 via the existing Testcontainers harness; real Identity cookies/CSRF, no fake auth/InMemory/SQLite. No application package/lockfile change. Consulted official EF parameterized SqlQuery/unmapped-type docs and PostgreSQL EXPLAIN/Repeatable Read docs before version-sensitive APIs.
+
+1. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-reporting/artifacts -m:1` — **exit 0**, all six projects restored, no reported audit warnings. `dotnet tool restore` — **exit 0**, repository-pinned dotnet-ef 10.0.14 restored.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-reporting/artifacts -m:1` — implementation builds succeeded with **0 warnings/errors** after fixing one missing test-namespace import (initial CS0103). All final source uses supported installed APIs.
+3. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-reporting/artifacts -m:1 --filter 'FullyQualifiedName~Reporting' --logger 'trx;LogFilePrefix=reporting-initial' --results-directory /tmp/orderflow-reporting/results` — **15 integration passed**, no unit tests matched before new rule tests existed.
+4. Before model index changes, focused `--filter 'FullyQualifiedName~ReportingQueryPlanTests|FullyQualifiedName~ReportingRulesTests'` / prefix reporting-plans — **1 integration + 7 unit passed**. PostgreSQL 100,000-row experiment observed one-day 274 matches (99,726 filtered), one-order 10 matches (99,990 filtered), Seq Scan before vs candidate Bitmap Index/Heap Scan after. No production improvement percentage is inferred. Eleven final JSON plans (six synthetic before/after + five actual report SQL) are under `/tmp/orderflow-reporting/plans`; actual sales/refund/top use the new date indexes and existing PKs, counts use existing Orders date index, low stock scans the small catalog/joins balances.
+5. `ArtifactsPath=/tmp/orderflow-reporting/artifacts ConnectionStrings__OrderFlow='<nonconnecting design connection>' dotnet ef migrations add AddReportingReadIndexes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` — **exit 0**, generated migration 20261113082834. Same environment with `dotnet ef migrations has-pending-model-changes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` — **exit 0**, no model drift. The design connection contains no password and is never connected.
+6. `dotnet ef migrations script 20261112082134_AddEmailDeliveries 20261113082834_AddReportingReadIndexes --idempotent --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build --output /tmp/orderflow-reporting/reporting-indexes.sql` with the same ArtifactsPath/design environment — **exit 0**. Inspected script: exactly five CREATE INDEX statements, no DROP/DELETE/UPDATE. Script was generated for review, not applied to developer data; EF upgrade itself is exercised on owned test DBs.
+7. Expanded reporting run initially had **18 integration passed / 1 fixture failure**, plus **7 unit passed**: normal DevelopmentSeeder correctly refuses pending migrations. Corrected only fixture order: seed valid data on latest schema, remove this index-only migration's five indexes to reach prior schema, then migrate forward. Did not weaken the production seed/migration guard. Added empty 366-day, multi-item multiplication, timezone and snapshot regressions.
+8. Final reporting command from (3), prefix **reporting-final** — **21 integration + 7 unit = 28 passed**, **0 failed/skipped**, integration **28s**. TRX `reporting-final_net10.0_20261113153843.trx` / `...153844.trx`. Includes populated migration, safe audit/authorization, source replay, deterministic date/refund/money/stock cases, actual SQL and synthetic plan checks.
+9. Full `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-reporting/artifacts -m:1 --logger 'trx;LogFilePrefix=reporting-full' --results-directory /tmp/orderflow-reporting/results` initially produced **444 integration passed / 1 failed**, plus **178 unit passed**. The sole failure was the pre-existing hardcoded migration count (12 vs new 13), not a business regression. Updated that existing test to require 13 and the exact new latest migration. TRX `reporting-full_net10.0_20261113154437.trx` / `...154438.trx`.
+
+10. Final rebuild after the migration-count test update — same command from (2), **exit 0**, **0 warnings / 0 errors**, **5.13s**. Final full suite — same command from (9), prefix **reporting-verified** — **exit 0**, **445 integration + 178 unit = 623 passed**, **0 failed/skipped**; integration duration **5m13s**. TRX `reporting-verified_net10.0_20261113155152.trx` and `reporting-verified_net10.0_20261113155153.trx` under `/tmp/orderflow-reporting/results`. No production or test code changed after this passing full run; only final documentation evidence was updated.
+11. `git diff --check` — **exit 0**. Final text verification covered **28 changed/new files**, Markdown fences/relative links/whitespace/conflict markers; package/lock changes **none**. Inspected additive migration/model diff and generated SQL: exactly five read indexes, no business schema/data rewrite. No commit, push, deployment or developer DB migration/reset. Production workload/cardinality/replica/runtime-role behavior remains unverified; the documented direct-query limits and UTC semantics apply.
+
+### Manual verification / known trade-offs
+
+Follow [reporting runbook](reporting.md): privately configure DB, review/apply the dedicated index migration, log in as Admin and GET the nine routes with UTC date filters. Compare before/after simulated payment/refund/fulfillment/catalog price changes and reserved-stock changes; repeat as Customer to see 403. PUT/DELETE audit routes do not exist. All manual commands and the UTC versus Vietnam 07:00 display-day example are documented. No developer DB migration or user-data mutation was run here; test databases are owned/disposable.
+
+Ordinary CREATE INDEX adds write/storage cost and can block writers during migration; it is not CONCURRENTLY. Direct reports add database work, broad ranges may scan, and individual endpoint snapshots may differ. observedAt is approximate request observation metadata, not a historical cutoff/watermark. No report UI/export, local-calendar-day ranges, historical status/stock reconstruction, production load/latency benchmark, replica/warehouse, reporting event platform or runtime-role deployment is claimed. Existing frontend/proxy/shared-key/deployment/report UI work remains pending. Aggregate decimal overflow is visible rather than rounded/truncated into false success.
+
+### Three interview questions
+
+1. **Completed khác Paid thế nào?** Hiểu fulfillment không tạo revenue; winning capture và immutable item prices mới xác định paid sales, còn late capture/refund là dòng tiền riêng.
+2. **Vì sao net một ngày có thể âm?** Refund Succeeded có thể ở ngày sau capture; UTC [from,to) và từng timestamp source quyết định ngày, không lấy created order hay pending refund làm tiền thật.
+3. **Vì sao dùng direct query + Repeatable Read thay projection?** Hiểu quy mô view nhỏ không cần consumer/inbox/checkpoint; DB group/projection/index đã đo đủ dùng. Snapshot giữ count/page nhất quán, riêng từng request vẫn có thể thấy commit khác nhau.
+
+Suggested commit title (none supplied): `feat(reporting): add admin sales reports and read-only audit`.

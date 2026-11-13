@@ -175,3 +175,10 @@ Migration **20261111044314_AddRefundRecovery** preserves existing compensation I
 ## Email delivery — 23 email slice
 
 **20261112082134_AddEmailDeliveries** adds notifications.EmailDeliveries and append-only EmailDeliveryRetries. Snapshots/keys/source/order/recipient identity, per-cycle/lifetime counters, leases/outcome/due/failure metadata and operator cycle audits are durable. Unique order/template and source/template/recipient plus immutable identity/Sent and audited-cycle guards protect recovery. Existing notification inbox rows/orders/outbox remain unchanged; old Processed confirmations are not backfilled. Sender network runs outside all business transactions. Destructive Down refuses evidence loss; see [email runbook](email-delivery.md).
+
+
+## Reporting read indexes
+
+**20261113082834_AddReportingReadIndexes** adds five nonunique read indexes only: PaymentCaptures(RecordedAt,Id), PaymentCaptures(OrderId,RecordedAt,Id), PaymentAttempts(OrderId,CreatedAt,Id), succeeded-only Refunds(SucceededAt,Id), and StockMovements(OccurredAt,Id). No table/column/trigger or financial fact is rewritten. [ADR-026](adr/0026-direct-admin-reporting.md) records measured access paths and the choice to query authoritative rows directly rather than add reporting snapshots/inbox tables. [Reporting runbook](reporting.md) defines UTC date/financial/audit semantics.
+
+Use the existing dedicated migration process; hosts still never migrate automatically. CREATE INDEX is ordinary transactional DDL, not CONCURRENTLY; schedule appropriately for table size/write load. Down removes only these five indexes. The owned-database upgrade test seeds valid financial data, removes only the five new indexes to reach the exact previous schema (normal seeding correctly refuses pending migrations), then reapplies the migration and verifies identities/totals/indexes. No developer database/data was changed.

@@ -853,6 +853,9 @@ namespace OrderFlow.Application.Persistence.Migrations
 
                     b.HasIndex("ActorUserId");
 
+                    b.HasIndex("OccurredAt", "Id")
+                        .HasDatabaseName("IX_StockMovements_OccurredAt_Id");
+
                     b.HasIndex("Operation", "OperationId")
                         .IsUnique()
                         .HasDatabaseName("UX_StockMovements_Operation");
@@ -1174,6 +1177,9 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .IsUnique()
                         .HasFilter("\"ProviderTransactionId\" IS NOT NULL");
 
+                    b.HasIndex("OrderId", "CreatedAt", "Id")
+                        .HasDatabaseName("IX_PaymentAttempts_Order_CreatedAt_Id");
+
                     b.ToTable("PaymentAttempts", "payments", t =>
                         {
                             t.HasCheckConstraint("CK_PaymentAttempts_Captured", "\"Status\" <> 'Captured' OR (\"ObservedState\" IS NOT DISTINCT FROM 'Succeeded' AND \"ProviderCaptureId\" IS NOT NULL AND \"ProviderTransactionId\" IS NOT NULL AND \"LeaseToken\" IS NULL)");
@@ -1262,6 +1268,12 @@ namespace OrderFlow.Application.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("Provider", "ProviderEventId");
+
+                    b.HasIndex("RecordedAt", "Id")
+                        .HasDatabaseName("IX_PaymentCaptures_RecordedAt_Id");
+
+                    b.HasIndex("OrderId", "RecordedAt", "Id")
+                        .HasDatabaseName("IX_PaymentCaptures_Order_RecordedAt_Id");
 
                     b.ToTable("PaymentCaptures", "payments", t =>
                         {
@@ -1421,6 +1433,10 @@ namespace OrderFlow.Application.Persistence.Migrations
                     b.HasIndex("Provider", "ProviderRefundId")
                         .IsUnique()
                         .HasFilter("\"ProviderRefundId\" IS NOT NULL");
+
+                    b.HasIndex("SucceededAt", "Id")
+                        .HasDatabaseName("IX_Refunds_SucceededAt_Id")
+                        .HasFilter("\"Status\" = 'Succeeded'");
 
                     b.HasIndex("Provider", "ProviderCaptureId", "Purpose")
                         .IsUnique();

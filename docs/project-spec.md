@@ -154,7 +154,15 @@ All paths below are under `/api`. Browser POST/PUT/PATCH/DELETE endpoints, inclu
 | POST `/notifications/{id}/read` | Owning authenticated user + CSRF | Empty body; idempotent first read timestamp; 200 |
 | GET `/admin/email-deliveries` | Admin | Bounded failed email metadata, no address/body |
 | POST `/admin/email-deliveries/{id}/retry` | Admin + CSRF | operationId/reason/risk acknowledgement; same identity, bounded new cycle |
-| GET `/admin/reports/sales` | Admin | UTC `[from,to)` range, daily USD sales, current order-state counts, projection checkpoint |
+| GET `/admin/reports/sales` | Admin | Required UTC dates `[from,to)`, daily/total paid sales, all recorded captures, succeeded refunds and signed net; observedAt, no projection |
+| GET `/admin/reports/order-counts` | Admin | Current persisted counts for orders created in UTC range |
+| GET `/admin/reports/top-products` | Admin | Paid units/value from immutable order items, limit 1–100 |
+| GET `/admin/reports/low-stock` | Admin | Paginated active catalog with current OnHand-Reserved <= threshold |
+| GET `/admin/audit/orders/{id}/history` | Admin | UTC-ranged, paginated immutable state history |
+| GET `/admin/audit/orders/{id}/payment-attempts` | Admin | UTC-ranged, paginated safe current attempt states |
+| GET `/admin/audit/orders/{id}/captures` | Admin | UTC-ranged, paginated local capture/allocation metadata |
+| GET `/admin/audit/orders/{id}/refunds` | Admin | UTC-ranged, paginated safe current refund states |
+| GET `/admin/audit/stock-movements` | Admin | UTC-ranged, paginated immutable movements, optional order/product filters |
 | GET `/admin/operations/failures` | Admin | Bounded list of failed/quarantined jobs and sanitized error codes |
 | GET `/health/live` | Anonymous | Process liveness only; no sensitive detail |
 | GET `/health/ready` | Anonymous | Database/schema readiness; worker readiness also exposed by worker's internal health mechanism |
@@ -171,7 +179,7 @@ Errors use Problem Details with stable `code`, `traceId`, and validation fields 
 
 Checkout, stock changes, cancellation, expiry, and accepted-capture confirmation are strongly consistent inside PostgreSQL transactions. They include state/history and an outbox event. No payment, refund, HTTP, email, or reporting network call occurs while a business transaction is open. Database-only module collaboration within the same unit of work is allowed.
 
-Outbox dispatch, provider submission/reconciliation, callback processing after durable receipt, refunds, notifications, and reporting are eventual. `202` is durable acceptance, not successful payment/refund. A temporarily stopped worker delays expiry/release, capture processing, refunds, notifications, and projections; it cannot allow an overdue confirmation. Reporting/notification failure cannot roll back checkout. GET order is authoritative for order state; reporting includes checkpoint/updatedAt and can lag.
+Outbox dispatch, provider submission/reconciliation, callback processing after durable receipt, refunds and notifications are eventual. `202` is durable acceptance, not successful payment/refund. A temporarily stopped worker delays expiry/release, capture processing, refunds and notifications; it cannot allow an overdue confirmation. Reporting/notification failure cannot roll back checkout. GET order is authoritative for order state. Per ADR-026, reporting now reads authoritative committed rows in a per-response Repeatable Read/read-only snapshot with observedAt; it has no reporting consumer/projection checkpoint. Upstream unprocessed capture/refund observations remain absent until their existing workflow commits them.
 
 Every integration event has an immutable envelope:
 
@@ -196,7 +204,7 @@ Every integration event has an immutable envelope:
 
 Envelope examples are placeholders, not executable fixtures. Order state events carry a full minimal projection snapshot: order ID, status, version, creation/update times, USD total, immutable confirmedAt and winning capture reference when applicable; exclude passwords, tokens, cookies, addresses, and email. Persist confirmedAt at the winning confirmation; later fulfillment snapshots retain it so reordered events cannot shift sales into a different day. Event types initially cover order-created/cancelled/expired/confirmed/processing/shipped/completed, inventory-adjusted, payment-captured, and refund-requested/succeeded/failed, prefixed by their producing module as in the example. Increment the order aggregate version once per state change. Event IDs are independent of aggregate IDs and transport delivery attempts. Breaking payload changes require a new schema version; unknown versions are quarantined, never silently ignored.
 
-Delivery is at least once. Outbox event identity is unique; each consumer's inbox `(consumerName,eventId)` is unique. Apply the consumer's durable effects and mark its inbox handled in one transaction. Lease expiry can run the same delivery again. Claim/complete using lease tokens; an old owner cannot acknowledge a newer lease. Global event ordering is not guaranteed. Reporting applies only snapshots newer than its stored aggregate version, and updates contributions/counters transactionally; older events cannot regress status or double-count sales. Order count uses latest projected state; sales recognize the one winning capture at Confirmed and its confirmation UTC day, not raw late/surplus captures or provider attempt counts. Compensation of unallocated captures is not negative sales. Notifications use a unique `(eventId,template,recipientUserId)` delivery identity; v1 uses a durable local delivery record, with no external email requirement.
+Delivery is at least once. Outbox event identity is unique; each consumer's inbox `(consumerName,eventId)` is unique. Apply the consumer's durable effects and mark its inbox handled in one transaction. Lease expiry can run the same delivery again. Claim/complete using lease tokens; an old owner cannot acknowledge a newer lease. Global event ordering is not guaranteed. ADR-026 supersedes the originally planned reporting snapshot consumer: direct queries count unique authoritative financial rows and current persisted order states, without event-version state to regress. Paid sales recognize the one winning capture/confirmation UTC recording day using immutable order-item prices. All captured funds and succeeded-refund cash movements are separately reported; compensation of unallocated captures is not negative paid sales. Notifications retain their independent inbox/effect identity and later explicitly requested delivery behavior.
 
 Failed deliveries retain error code, count, next attempt, and last failure time. Transient retries are bounded; exhausted/permanent failures require operator attention. The runbook must retry the original operation/event identity, never manufacture a replacement capture/refund. No promise of exactly-once external side effects. Full database structure, lease protocol, and failure classifications are in architecture and ADR-005.
 
@@ -232,7 +240,7 @@ These are implementation obligations. Milestone 01 passes only the documentation
 | A18 | Outbox/inbox independently deduplicate; newer projection cannot regress on older event | Duplicate/out-of-order + transactional inbox/projection tests, 14, 23–24 |
 | A19 | Only classified transient failures retried with bounded attempts; permanent failures observable | Fault injection/exhaustion/operator retry tests, 14–18, 26–28 |
 | A20 | Frontend trusts server authority, exact cents, recoverable checkout retries, CSRF refresh | Client unit/component tests and browser flows, 20–22, 27 |
-| A21 | Local notifications uniquely recorded; reporting lags safely and counts winning sales once | Consumer SQL tests, rollback/reorder tests and reporting auth/range tests, 23–24 |
+| A21 | Local notifications uniquely recorded; direct reports distinguish winning sales, captures, succeeded refunds and net | Notification consumer SQL tests; reporting UTC/money/auth/range/snapshot tests under ADR-026, 23–24 |
 | A22 | Structured redacted logs, readiness and safe configuration, no optional external checkout dependency | Log/config/readiness inspection + worker-down scenario, 25–28 |
 | A23 | No network calls inside business transactions, no EF InMemory evidence for SQL invariants | Gateway transaction instrumentation + PostgreSQL-backed integration suite, 12, 15–18, 26 |
 | A24 | Contract, operating guide, demo and limitations agree with verified implementation | Final acceptance walkthrough and reproducible run commands, 29 |
@@ -288,3 +296,8 @@ No frontend is added here; integration stays a later milestone-23 slice. The sup
 [ADR-025](adr/0025-bounded-catalog-cache.md) permits distributed-only cache-aside for public product/category details using stable .NET 10 IDistributedCache/Redis. Product entries contain catalog fields only and CategoryId; category metadata is cached separately, Available is read from PostgreSQL each request. Admin and all lists bypass cache. Checkout/reservation/price/eligibility decisions remain PostgreSQL-authoritative.
 
 Both keys have a 30-second absolute lifetime anchored before the source read, bounded UTF-8 JSON <=16 KiB and an embedded deadline checked at lookup. Successful mutations remove affected keys after DB commit/disposal. No L1 exists on any API node. Concurrent stale refill, failed invalidation or process exit after commit may leave stale presentation until the original deadline; this is not a linearizable detail snapshot. Category changes do not require fan-out invalidation. Cache dependency failures warn/count and read DB; SQL errors/cancellation propagate. See [cache runbook](catalog-caching.md) for keys, serialization, clock/response-boundary assumptions and actual SQL-count measurement. No private data, arbitrary filtered-list caching, schema migration or frontend is added.
+
+
+## Direct Admin reporting — milestone 24 backend
+
+[ADR-026](adr/0026-direct-admin-reporting.md) defines the direct read-only reporting replacement for the former reporting event projection. [Reporting runbook](reporting.md) defines all nine routes, financial date semantics, safe audit fields, UTC versus UI local dates and query-plan evidence. PaidSales uses immutable winning order-item totals; all recorded captures and succeeded-refund cash movements are distinct measures, and signed NetRevenue may be negative for a refund-only period. No report UI, historical status/stock reconstruction or event platform is added.

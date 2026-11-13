@@ -35,4 +35,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-025](0025-bounded-catalog-cache.md) | Distributed-only catalog detail cache-aside, source-anchored TTL, postcommit invalidation and DB fallback |
 
+| [ADR-026](0026-direct-admin-reporting.md) | Direct Admin report snapshots, distinct paid/captured/refunded/net semantics and bounded read-only audit |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

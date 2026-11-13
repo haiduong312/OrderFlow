@@ -1,6 +1,6 @@
 # ADR-001: Modular monolith with feature folders
 
-Date: 2026-10-30. Status: Accepted.
+Date: 2026-10-30. Status: Accepted; reporting event-projection ownership is superseded by [ADR-026](0026-direct-admin-reporting.md).
 
 ## Context
 

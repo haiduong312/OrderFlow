@@ -44,6 +44,8 @@ public sealed class PaymentCaptureConfiguration : IEntityTypeConfiguration<Payme
         b.Property(c => c.Source).HasMaxLength(16).HasDefaultValue("Callback");
         b.HasIndex(c => new { c.Provider, c.ProviderCaptureId }).IsUnique();
         b.HasIndex(c => c.OrderId).IsUnique().HasFilter("\"Allocated\"").HasDatabaseName("UX_PaymentCaptures_AllocatedOrder");
+        b.HasIndex(c => new { c.RecordedAt, c.Id }).HasDatabaseName("IX_PaymentCaptures_RecordedAt_Id");
+        b.HasIndex(c => new { c.OrderId, c.RecordedAt, c.Id }).HasDatabaseName("IX_PaymentCaptures_Order_RecordedAt_Id");
         b.HasOne<PaymentAttempt>().WithMany().HasForeignKey(c => c.AttemptId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Order>().WithMany().HasForeignKey(c => c.OrderId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<PaymentEvent>().WithMany().HasForeignKey(c => new { c.Provider, c.ProviderEventId }).OnDelete(DeleteBehavior.Restrict);
@@ -76,6 +78,7 @@ public sealed class PaymentRefundConfiguration : IEntityTypeConfiguration<Paymen
         b.Property(r => r.LeaseToken).IsConcurrencyToken();
         b.HasIndex(r => new { r.Provider, r.ProviderRefundId }).IsUnique().HasFilter("\"ProviderRefundId\" IS NOT NULL");
         b.HasIndex(r => new { r.NextAttemptAt, r.Id }).HasFilter("\"Status\" = 'Pending'").HasDatabaseName("IX_Refunds_Due");
+        b.HasIndex(r => new { r.SucceededAt, r.Id }).HasFilter("\"Status\" = 'Succeeded'").HasDatabaseName("IX_Refunds_SucceededAt_Id");
         foreach (var name in new[] { nameof(PaymentRefund.CaptureId), nameof(PaymentRefund.Provider), nameof(PaymentRefund.ProviderCaptureId),
             nameof(PaymentRefund.Purpose), nameof(PaymentRefund.ProviderRefundKey), nameof(PaymentRefund.Amount), nameof(PaymentRefund.Currency),
             nameof(PaymentRefund.Reason), nameof(PaymentRefund.CreatedAt) })

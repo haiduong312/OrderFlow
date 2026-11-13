@@ -85,6 +85,7 @@ public sealed class StockMovementConfiguration : IEntityTypeConfiguration<StockM
         builder.HasIndex(movement => new { movement.Operation, movement.OperationId }).IsUnique().HasDatabaseName("UX_StockMovements_Operation");
         builder.HasIndex(movement => new { movement.ProductId, movement.Revision }).IsUnique().IsDescending(false, true)
             .HasDatabaseName("UX_StockMovements_Product_Revision");
+        builder.HasIndex(movement => new { movement.OccurredAt, movement.Id }).HasDatabaseName("IX_StockMovements_OccurredAt_Id");
         foreach (var property in builder.Metadata.GetProperties()) property.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
     }
 }
