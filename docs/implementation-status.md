@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-13 (Asia/Ho_Chi_Minh). Current milestone: **23 realtime backend — authenticated SignalR hints with API-hosted RabbitMQ dispatch and official Redis backplane**. Server-derived user routing, minimal stable identities, cookie/CSRF/Origin checks, bounded hint failure paths, two-API network demo and connection lifecycle tests are implemented. Durable Notifications/orders/HTTP remain authoritative. Frontend integration remains a later 23 slice; proxy affinity/shared-key/forwarded-header deployment is explicitly 26.
+Updated: 2026-11-13 (Asia/Ho_Chi_Minh). Current milestone: **supplemental catalog detail caching — complete implementation with optional distributed-only Redis cache-aside**. Public product/category details use catalog-only bounded payloads, source-anchored 30-second deadlines and postcommit invalidation. Availability/checkout remain PostgreSQL-authoritative. No L1, filtered-list/private caching, schema migration or frontend is added. See the final milestone section for exact execution evidence and limitations. Prior milestone 23 realtime backend remains implemented; its frontend/proxy/shared-key deployment work remains deferred as previously recorded.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -1349,3 +1349,74 @@ No frontend/client app, proxy/affinity configuration, shared protected DP deploy
 3. **Redis có bỏ được sticky session không?** Không với negotiation đang hỗ trợ; negotiate/connect vẫn cần đúng API. User identity đến từ cookie, không từ client group/query; proxy cấu hình ở 26.
 
 Suggested commit title (none supplied): `feat: add authenticated SignalR notification hints with Redis scale-out`.
+
+
+## Supplemental catalog detail caching (2026-11-13)
+
+### Scope and decisions
+
+Inspected repository instructions, clean Git status, catalog/HTTP/checkout/Redis composition, pinned SDK/packages/lockfiles, persistence mappings/migration chain and existing test harness. The specification originally excluded Redis/distributed cache; reported this conflict before dependent work and recorded the explicitly requested narrow exception in [ADR-025](adr/0025-bounded-catalog-cache.md), specification and architecture. Existing milestone IDs/dependencies remain unchanged; this supplement depends on catalog 07, inventory/checkout foundations and the existing Redis infrastructure. No subagents, commits, pushes, deployment, history rewrite or user-data deletion.
+
+Select supported .NET 10 IDistributedCache cache-aside with Microsoft.Extensions.Caching.StackExchangeRedis **10.0.15** over HybridCache: no local L1 or cross-process eviction ambiguity is needed. SDK remains **10.0.115**, runtime **10.0.15**, EF/Identity pins unchanged; refresh all six affected lockfiles for necessary transitive dependencies. Cache is disabled by default and lazily connects only when enabled/used.
+
+### Completed acceptance
+
+| Requirement | Implemented evidence |
+| --- | --- |
+| Narrow public catalog scope | Only public Product/Category details; all lists and Admin reads bypass cache; no account/order/auth/checkout cache |
+| Catalog-only DTO and live stock | ProductCatalogEntry contains catalog fields and CategoryId, no inventory/category snapshot; compose category independently and query Available directly every request |
+| Keys/serialization/load bounds | Deployment prefix + catalog:v1 + product/category + canonical UUID N; UTF-8 camelCase JSON envelope, decimal internal price, <=16 KiB/depth 8, required fields; existing public USD strings unchanged; no negative caching |
+| Explicit multi-node consistency | Distributed-only Redis; fixed absolute 30 seconds anchored before SQL, embedded deadline checked at lookup; no sliding renewal or remote L1 assumption |
+| Mutation visibility/invalidation | Create/update/archive/restore/reassignment remove affected key after commit/disposal; category key avoids product fan-out; tests cover two real independent Kestrel hosts |
+| Stale refill / failed removal | TCS gate observes old reader before SET, commits edit/archive + DELETE, then releases old SET; stale display allowed only until original deadline; retained-key failed DELETE test checks fresh Admin bypass and exact deadline |
+| Redis outage / SQL failure | Stop actual Redis; both APIs read DB and writes commit with safe warnings; injected SQL failure remains HTTP 500; cache Get/Set/Remove failures are classified locally, cancellation/source failures propagate |
+| Logs/metrics | Safe warning IDs 2501/2502, operation/kind/exception type only; bounded-tag catalog_cache_operations counter under OrderFlow.CatalogCache; metrics tested |
+| Backend stock correctness | Warm catalog data survives reservation while each detail reflects live Available; checkout rejects quantity exceeding PostgreSQL availability; existing checkout/catalog races still pass |
+| Repeatable measurement | Ten category-detail HTTP reads: cache disabled **10 SELECTs**, Redis enabled **1 SELECT** (1 miss, 9 hits). Two list reads still execute 4 SELECTs. No invented percentage/latency claim |
+
+### Luồng chính (tiếng Việt)
+
+GET detail công khai hỏi Redis bằng key cố định theo loại và UUID. Cache hit chỉ trả dữ liệu catalog còn trong hạn. Product đọc category qua key riêng rồi luôn lấy Available từ PostgreSQL; cached DTO không có tồn kho. Cache miss đọc DB bằng DbContext của request, tính hạn trước query, rồi lưu JSON nếu còn hạn và không vượt 16 KiB. Khi tắt cache, product giữ query join cũ.
+
+Lệnh Admin vẫn kiểm tra version/quy tắc và commit DB như trước. Sau khi transaction đã dispose mới xóa key Redis; sửa category chỉ xóa category key. Redis lỗi thì ghi warning/counter và dùng kết quả DB; lỗi SQL không bị bắt thành cache miss. Checkout vẫn khóa/kiểm tra PostgreSQL và tự tính giá/tổng, không dựa vào cache.
+
+DELETE không ngăn được một reader cũ SET sau đó. Không có L1 ở API khác; payload giữ deadline của lần đọc DB ban đầu, nên cache cũ không được chấp nhận sau 30 giây tại lookup. Crash/hủy request sau commit hoặc DELETE lỗi có cùng cửa sổ cũ; đồng hồ host cần đồng bộ. Request đã chạy có thể hoàn tất muộn hơn và product/category không phải snapshot nguyên tử.
+
+### Important files / migration
+
+- Application/Modules/Catalog/CatalogCache.cs: narrow DTO/cache-aside, deadline/payload bounds, failure classification and metrics.
+- Application/Modules/Catalog/CatalogService.cs: cache integration, independent category/live availability, transaction-disposed mutation invalidation.
+- Api/Catalog/CatalogCachingRegistration.cs, Program.cs, appsettings.json: opt-in Redis registration, safe validated prefix/config, 250ms SDK budgets and FailFast backlog.
+- Directory.Packages.props, Application csproj and six package lockfiles: pinned supported provider/dependency graph.
+- IntegrationTests/Catalog/CatalogCacheApiHost.cs / CatalogCacheTests.cs and UnitTests/CatalogCacheTests.cs: actual Kestrel/PostgreSQL/Redis and deterministic/failure/payload/metrics evidence.
+- [Cache runbook](catalog-caching.md), [ADR-025](adr/0025-bounded-catalog-cache.md), spec/architecture/catalog/status/ADR index.
+- **No new database migration/model change**, worker behavior or frontend change.
+
+### Exact checks and results
+
+Tooling: DOTNET_CLI_HOME=/tmp/orderflow-caching/dotnet-home, DOTNET_CLI_TELEMETRY_OPTOUT=1; existing user NuGet package cache; all build/TRX output under /tmp/orderflow-caching. SDK/package pins above. PostgreSQL/Redis actually ran in disposable Testcontainers; no InMemory/SQLite fallback or skip. Two separate Kestrel servers/DI providers used real loopback HTTP. Generated fixture credentials stayed out of source/log output.
+
+1. Initial sandbox restore exited 1 without diagnostics; permitted execution outside the sandbox restored all six projects. `dotnet restore OrderFlow.slnx --artifacts-path /tmp/orderflow-caching/artifacts -m:1` — **exit 0**. Final `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-caching/artifacts -m:1` — **exit 0**, all six lockfiles reproducible, no reported audit warnings.
+2. `docker version` via snap could not create its runtime directory; even elevated snap launcher lacked cap_dac_override. Native `/snap/docker/current/bin/docker version --format '{{.Server.Version}}'` — **exit 0**, daemon 29.3.1. Testcontainers accessed the actual daemon successfully. No approval rejection or prerequisite blocker remained.
+3. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-caching/artifacts -m:1` — **exit 0**, final build **0 warnings / 0 errors**, 5.38 seconds. Earlier implementation builds also succeeded.
+4. Initial focused `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-caching/artifacts -m:1 --filter 'FullyQualifiedName~CatalogCache' --logger 'trx;LogFilePrefix=catalog-cache' --results-directory /tmp/orderflow-caching/results` — **5 integration + 9 unit passed**, 0 failed/skipped. Expanded catalog/checkout pass with the next command's filter and prefix catalog-checkout — **78 integration + 34 unit passed**, 0 failed/skipped.
+5. Full regression `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-caching/artifacts -m:1 --logger 'trx;LogFilePrefix=caching-full' --results-directory /tmp/orderflow-caching/results` — **424 integration + 165 unit = 589 passed**, **0 failed/skipped**; integration duration **4m27s**. TRX `caching-full_net10.0_20261113145830.trx` / `...145831.trx`. This full run preceded the final explicit RedisTimeoutException classification and six additional timeout/server/source-failure cases.
+6. Review of official installed StackExchange.Redis 2.7.27 source showed RedisTimeoutException inherits TimeoutException, not RedisException. Added its specific catch classification and GET/SET/DELETE timeout tests, while explicitly testing DB timeout propagation. After the final build, `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-caching/artifacts -m:1 --filter 'FullyQualifiedName~Catalog|FullyQualifiedName~Checkout' --logger 'trx;LogFilePrefix=catalog-final' --results-directory /tmp/orderflow-caching/results` — **78 integration + 40 unit = 118 passed**, **0 failed/skipped**; integration duration **52s**. TRX `catalog-final_net10.0_20261113150159.trx` / `...150200.trx`. This final run includes all **7 new integration + 16 new unit cases** and catalog/checkout regressions. Unrelated full suites were not repeated after this final narrow exception-classification change.
+7. The measurement's captured TRX stdout reports: `GET category detail x10: cache disabled=10 SQL SELECTs; Redis enabled=1 SQL SELECTs (1 miss, 9 hits).` SQL interception counts actual EF commands, not estimated percentages. Product test asserts cold 3 vs cross-node hit 1 and live stock changes; stale stock cannot authorize another reservation.
+8. `git diff --check` — **exit 0**. Markdown relative-link/fence and JSON parsing checks passed; final inspection confirms no migration/model/checkout/worker implementation changes, no real secrets or commit/push/deploy. Documentation updated after final code verification only.
+
+Unverified limits: no independent OS-process kill, Redis cluster/partition/rolling deployment or production ACL/TLS/memory policy; no latency/throughput benchmark. UTC synchronization and in-flight response caveats apply to the 30-second lookup guarantee. SQL/source failures are not silently hidden. Full regression numbers above are deliberately distinguished from final targeted verification.
+
+### Manual verification / remaining work
+
+[Runbook](catalog-caching.md) contains setup, two-port API commands, Admin cookie/CSRF edit/archive/restore, Redis stop/start and executable measurement. Use the existing private DB/Redis configuration mechanism. Start the optional Redis service, enable CatalogCache__Enabled, set CatalogCache__RedisConnectionString and the same environment-specific CatalogCache__RedisPrefix on both APIs. Disabled remains the default. No developer DB was migrated/reset for verification; fixtures own generated disposable databases/keys.
+
+Product hit still needs one live inventory SELECT. A cold product miss needs 3 queries versus 1 joined uncached query; from cold, ten product reads imply 12 total queries versus 10, even though product/category catalog projections each run once. Category reads show the measured statement reduction; no overall product latency/throughput improvement is claimed. No distributed stampede protection/durable invalidation/linearizable detail snapshot is introduced. Lists can be fresh before details. Remaining: production Redis ACL/TLS/memory/eviction policy, OS-process crash/cluster/network partition proof, latency/load benchmarking and any future managed list invalidation. Existing frontend/proxy/shared-key/reporting milestones remain unchanged.
+
+### Three interview questions
+
+1. **Vì sao dùng distributed-only thay vì L1 ở mỗi API?** Hiểu DELETE Redis không xóa memory của API khác; thiết kế này đổi một lượt Redis/request lấy hợp đồng nhất quán đơn giản.
+2. **Vì sao TTL tính trước SELECT và có deadline trong payload?** Hiểu race SELECT cũ → mutation/DELETE → SET cũ; deadline gốc giới hạn staleness, không bảo đảm linearizable hay thời điểm giao response.
+3. **Cache giảm query nào và vì sao checkout không dùng nó?** Category detail giảm 10 SELECT xuống 1 trong phép đo; product vẫn đọc inventory, miss còn tăng round trip. PostgreSQL mới quyết định giá/eligibility/reservation trong transaction.
+
+Suggested commit title (none supplied): `feat(catalog): add bounded Redis cache-aside for public details`.

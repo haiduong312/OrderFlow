@@ -1,6 +1,6 @@
 # Catalog — milestone 07
 
-Products and Categories are implemented with PostgreSQL storage, explicit DTOs, public reads and Admin cookie/CSRF-protected writes. See [ADR-012](adr/0012-catalog-products-categories.md), [authentication setup](authentication.md) and [migration/setup guide](persistence.md). Milestone 08 adds actual advisory Available plus [Inventory commands/history](inventory.md); full reservations/checkout, Order snapshots, cache and uploads remain later features.
+Products and Categories are implemented with PostgreSQL storage, explicit DTOs, public reads and Admin cookie/CSRF-protected writes. See [ADR-012](adr/0012-catalog-products-categories.md), [authentication setup](authentication.md) and [migration/setup guide](persistence.md). Milestone 08 adds actual advisory Available plus [Inventory commands/history](inventory.md); reservations/checkout and Order snapshots now ship in [checkout](checkout.md). Optional public detail caching now ships under [ADR-025](adr/0025-bounded-catalog-cache.md) / [cache runbook](catalog-caching.md): catalog-only payloads, live availability, distributed-only entries, 30-second bounded staleness and postcommit invalidation. Lists/Admin reads remain uncached. Uploads remain deferred.
 
 ## API
 

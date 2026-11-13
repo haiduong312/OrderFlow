@@ -249,6 +249,7 @@
         "dependencies": {
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.14, )",
           "Microsoft.EntityFrameworkCore": "[10.0.14, )",
+          "Microsoft.Extensions.Caching.StackExchangeRedis": "[10.0.15, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
           "RabbitMQ.Client": "[7.2.2, )"
         }
@@ -270,6 +271,15 @@
         "dependencies": {
           "Microsoft.EntityFrameworkCore.Abstractions": "10.0.14",
           "Microsoft.EntityFrameworkCore.Analyzers": "10.0.14"
+        }
+      },
+      "Microsoft.Extensions.Caching.StackExchangeRedis": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "7ZI9pkvD5ZKupKBFkF5KzRm6Gn9RYQKC+BINblaOv194zdZFnGnmWNGqg1EEYZ9N7kAftlPNY6ZtGP662MXnbQ==",
+        "dependencies": {
+          "StackExchange.Redis": "2.7.27"
         }
       },
       "Npgsql.EntityFrameworkCore.PostgreSQL": {

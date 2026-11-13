@@ -34,11 +34,13 @@ public class Program
         builder.Services.AddSingleton(_ => PaymentCallbackSettings.Read(builder.Configuration));
         builder.Services.AddScoped<PaymentCallbackReceipt>();
         configure?.Invoke(builder);
+        builder.Services.AddCatalogCaching(builder.Configuration);
         builder.Services.AddNotificationRealtime(builder.Configuration);
         var app = builder.Build();
         // Validate final configuration before accepting any requests, including in test hosts.
         _ = app.Services.GetRequiredService<BrowserAuthSettings>();
         _ = app.Services.GetRequiredService<PaymentCallbackSettings>();
+        _ = app.Services.GetRequiredService<CatalogCacheSettings>();
         app.UseHttpFoundations();
         app.UseNotificationRealtime();
 

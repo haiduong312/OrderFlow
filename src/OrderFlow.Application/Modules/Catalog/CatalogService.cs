@@ -8,7 +8,7 @@ using OrderFlow.Application.Persistence;
 
 namespace OrderFlow.Application.Modules.Catalog;
 
-public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clock)
+public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clock, CatalogCache? cache = null)
 {
     private static readonly Expression<Func<Product, ProductResponse>> ProductProjection = product => new(
         product.Id, product.Sku, product.Name, product.Description, product.Price,
@@ -58,22 +58,45 @@ public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clo
         return new(items, page.Page, page.PageSize, count);
     }
 
-    public async Task<ProductResponse> ProductAsync(Guid id, bool admin, CancellationToken cancellationToken) =>
-        await database.Products.AsNoTracking().Where(product => product.Id == id
-            && (admin || (product.IsActive && product.Category.IsActive)))
-            .Select(ProductProjection).SingleOrDefaultAsync(cancellationToken)
-        ?? throw new ApplicationFailureException(ApplicationError.NotFound);
+    public async Task<ProductResponse> ProductAsync(Guid id, bool admin, CancellationToken cancellationToken)
+    {
+        if (admin || cache is not { Enabled: true })
+            return await database.Products.AsNoTracking().Where(product => product.Id == id
+                && (admin || (product.IsActive && product.Category.IsActive)))
+                .Select(ProductProjection).SingleOrDefaultAsync(cancellationToken)
+                ?? throw new ApplicationFailureException(ApplicationError.NotFound);
 
-    public async Task<CategoryResponse> CategoryAsync(Guid id, bool admin, CancellationToken cancellationToken) =>
-        await database.Categories.AsNoTracking().Where(category => category.Id == id && (admin || category.IsActive))
-            .Select(CategoryProjection).SingleOrDefaultAsync(cancellationToken)
-        ?? throw new ApplicationFailureException(ApplicationError.NotFound);
+        var fields = await cache.ProductAsync(id, token => database.Products.AsNoTracking()
+            .Where(product => product.Id == id && product.IsActive)
+            .Select(product => new ProductCatalogEntry(product.Id, product.Sku, product.Name, product.Description,
+                product.Price.Value, product.CategoryId, product.IsActive, product.Version)).SingleOrDefaultAsync(token), cancellationToken)
+            ?? throw new ApplicationFailureException(ApplicationError.NotFound);
+        if (!fields.IsActive) throw new ApplicationFailureException(ApplicationError.NotFound);
+        // Category data is separate: category changes never require scanning all product keys.
+        var category = await CategoryAsync(fields.CategoryId, false, cancellationToken);
+        var available = await database.InventoryBalances.AsNoTracking().Where(balance => balance.ProductId == id)
+            .Select(balance => balance.OnHand - balance.Reserved).SingleAsync(cancellationToken);
+        return new(fields.Id, fields.Sku, fields.Name, fields.Description, Common.Money.UsdMoney.FromDecimal(fields.Price),
+            new(category.Id, category.Name, category.IsActive), fields.IsActive, fields.Version, available);
+    }
+
+    public async Task<CategoryResponse> CategoryAsync(Guid id, bool admin, CancellationToken cancellationToken)
+    {
+        async Task<CategoryResponse?> Load(CancellationToken token) => await database.Categories.AsNoTracking()
+            .Where(category => category.Id == id && (admin || category.IsActive))
+            .Select(CategoryProjection).SingleOrDefaultAsync(token);
+        var category = admin || cache is not { Enabled: true } ? await Load(cancellationToken)
+            : await cache.CategoryAsync(id, Load, cancellationToken);
+        return category is not null && (admin || category.IsActive) ? category
+            : throw new ApplicationFailureException(ApplicationError.NotFound);
+    }
 
     public async Task<CategoryResponse> CreateCategoryAsync(CreateCategoryRequest request, CancellationToken cancellationToken)
     {
         var category = Category.Create(request.Name, BusinessTime.GetUtcNow(clock));
         database.Categories.Add(category);
         await SaveAsync(cancellationToken);
+        if (cache is not null) await cache.InvalidateCategoryAsync(category.Id, cancellationToken);
         return Response(category);
     }
 
@@ -84,6 +107,7 @@ public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clo
         category.Update(request.Name, request.IsActive ?? throw CatalogRules.Invalid("isActive", "Active flag is required."),
             CatalogRules.Version(request.ExpectedVersion));
         await SaveAsync(cancellationToken);
+        if (cache is not null) await cache.InvalidateCategoryAsync(category.Id, cancellationToken);
         return Response(category);
     }
 
@@ -96,32 +120,41 @@ public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clo
         // cannot be silently acknowledged as still archived.
         database.Entry(category).Property(row => row.Version).IsModified = true;
         await SaveAsync(cancellationToken);
+        if (cache is not null) await cache.InvalidateCategoryAsync(category.Id, cancellationToken);
         return Response(category);
     }
 
     public async Task<ProductResponse> CreateProductAsync(CreateProductRequest request, CancellationToken cancellationToken)
     {
         var product = Product.Create(request.Sku, request.Name, request.Description, request.Price, request.CategoryId, BusinessTime.GetUtcNow(clock));
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        var category = await ActiveCategoryAsync(product.CategoryId, cancellationToken);
-        database.Products.Add(product);
-        await SaveAsync(cancellationToken);
-        var response = await ResponseAsync(product, category, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        ProductResponse response;
+        await using (var transaction = await database.Database.BeginTransactionAsync(cancellationToken))
+        {
+            var category = await ActiveCategoryAsync(product.CategoryId, cancellationToken);
+            database.Products.Add(product);
+            await SaveAsync(cancellationToken);
+            response = await ResponseAsync(product, category, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        if (cache is not null) await cache.InvalidateProductAsync(product.Id, cancellationToken);
         return response;
     }
 
     public async Task<ProductResponse> UpdateProductAsync(Guid id, UpdateProductRequest request, CancellationToken cancellationToken)
     {
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        var product = await database.Products.SingleOrDefaultAsync(row => row.Id == id, cancellationToken)
-            ?? throw new ApplicationFailureException(ApplicationError.NotFound);
-        product.Update(request.Name, request.Description, request.Price, request.CategoryId,
-            request.IsActive ?? throw CatalogRules.Invalid("isActive", "Active flag is required."), CatalogRules.Version(request.ExpectedVersion));
-        var category = await ActiveCategoryAsync(product.CategoryId, cancellationToken);
-        await SaveAsync(cancellationToken);
-        var response = await ResponseAsync(product, category, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        ProductResponse response;
+        await using (var transaction = await database.Database.BeginTransactionAsync(cancellationToken))
+        {
+            var product = await database.Products.SingleOrDefaultAsync(row => row.Id == id, cancellationToken)
+                ?? throw new ApplicationFailureException(ApplicationError.NotFound);
+            product.Update(request.Name, request.Description, request.Price, request.CategoryId,
+                request.IsActive ?? throw CatalogRules.Invalid("isActive", "Active flag is required."), CatalogRules.Version(request.ExpectedVersion));
+            var category = await ActiveCategoryAsync(product.CategoryId, cancellationToken);
+            await SaveAsync(cancellationToken);
+            response = await ResponseAsync(product, category, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        if (cache is not null) await cache.InvalidateProductAsync(id, cancellationToken);
         return response;
     }
 
@@ -132,6 +165,7 @@ public sealed class CatalogService(OrderFlowDbContext database, TimeProvider clo
         product.Archive(CatalogRules.Version(request.ExpectedVersion));
         database.Entry(product).Property(row => row.Version).IsModified = true;
         await SaveAsync(cancellationToken);
+        if (cache is not null) await cache.InvalidateProductAsync(product.Id, cancellationToken);
         return await ResponseAsync(product, product.Category, cancellationToken);
     }
 

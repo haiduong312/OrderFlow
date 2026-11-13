@@ -33,4 +33,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-024](0024-signalr-notification-hints.md) | Authenticated API-hosted notification hints, official Redis backplane, bounded RabbitMQ dispatch and proxy-affinity boundary |
 
+| [ADR-025](0025-bounded-catalog-cache.md) | Distributed-only catalog detail cache-aside, source-anchored TTL, postcommit invalidation and DB fallback |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

@@ -10,6 +10,7 @@ flowchart LR
     Proxy --> Static[Client assets]
     Proxy --> API[ASP.NET Core API]
     API --> DB[(One PostgreSQL database)]
+    API -.->|Optional catalog details, no L1| Cache[(Redis)]
     Worker[Separate .NET worker] --> DB
     Worker -->|HTTP outside transaction| Gateway[Development/test simulator host]
     Gateway --> ProviderDB[(Independent provider persistence)]
@@ -179,3 +180,9 @@ The gateway declares idempotent-send/lookup capabilities; results bind stable pr
 [ADR-024](adr/0024-signalr-notification-hints.md) adds an opt-in API hub and API-hosted RabbitMQ consumer for the existing NotificationCreated outbox. Both APIs use official SignalR Redis backplane 10.0.15 (patched; runtime already 10.0.15) and server-derived canonical user identifiers. Worker never hosts a hub. Shared RabbitMQ settings/topology/subscription move to Application/Messaging so API/Worker keep their project boundary. No schema change.
 
 Consumer reads/validates durable notification identity/recipient in a scoped DbContext, disposes it, then sends only stable event/notification/order IDs through Clients.User. No client-selected user/order group methods or business writes. Cookie auth, same-origin WebSocket guard, explicit negotiate CSRF, HTTPS/dev opt-in, expiry/shutdown closure and bounded buffers/requests apply. Redis failure produces bounded hint retry/DLQ/logging, never removes durable notifications; reconnect refetches HTTP. No durable/exactly-once client-delivery claim. See [two-API demo and proxy obligations](realtime.md). Proxy affinity/upgrade/trusted forwarded headers/shared protected cookie keys are explicitly milestone 26; frontend integration remains a later 23 slice.
+
+## Optional catalog detail cache
+
+[ADR-025](adr/0025-bounded-catalog-cache.md) adds API-composed, application-owned CatalogCache using official IDistributedCache/Redis 10.0.15, disabled by default. No HybridCache/L1 or worker dependency is added. CatalogService alone uses separate product-fields and category DTO entries for public detail GETs; lists/Admin/checkout/auth/account/orders do not use it. ProductResponse still gets advisory Available directly from PostgreSQL on each call. Cache-aside misses run sequential SQL in the request's scoped DbContext; contexts are never shared across loads/tasks.
+
+Product/Category keys use a deployment prefix + version + canonical UUID. UTF-8 JSON <=16 KiB carries a 30-second absolute source-read deadline. Postcommit/disposed-transaction mutation invalidation targets just the changed entity; products hold CategoryId rather than embedded category metadata. No key scans, Redis calls in business transactions, distributed lock or invalidation worker/outbox is introduced. Concurrent stale SET/failed DELETE/crash-before-invalidation can expose old presentation until the original deadline; every lookup checks that deadline, and no other process holds a local copy. DB reads/failures remain authoritative. SDK cache failures are safely logged/counted and fall back to DB; cancellation/SQL failures propagate. [Runbook and measured statement counts](catalog-caching.md) document the lookup freshness boundary, synchronized-clock assumption and cold-product/live-inventory SQL cost.
