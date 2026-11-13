@@ -31,4 +31,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-023](0023-order-confirmation-email-delivery.md) | Durable confirmation email snapshots, sending leases, provider capability/SMTP uncertainty and audited Admin retry |
 
+| [ADR-024](0024-signalr-notification-hints.md) | Authenticated API-hosted notification hints, official Redis backplane, bounded RabbitMQ dispatch and proxy-affinity boundary |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-12 (Asia/Ho_Chi_Minh). Current milestone: **23 email slice — durable order-confirmation delivery and audited Admin retry**. The existing confirmation consumer creates immutable email intentions atomically with inbox/notification/outbox; a separate leased sender uses the gateway outside transactions. Local Mailpit, SMTP duplicate-risk evidence, bounded review/retry and an executable mail-outage/payment demo ship. Production/customer email, automatic historical backfill, realtime/UI, reporting and deployment remain outside this milestone.
+Updated: 2026-11-13 (Asia/Ho_Chi_Minh). Current milestone: **23 realtime backend — authenticated SignalR hints with API-hosted RabbitMQ dispatch and official Redis backplane**. Server-derived user routing, minimal stable identities, cookie/CSRF/Origin checks, bounded hint failure paths, two-API network demo and connection lifecycle tests are implemented. Durable Notifications/orders/HTTP remain authoritative. Frontend integration remains a later 23 slice; proxy affinity/shared-key/forwarded-header deployment is explicitly 26.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -52,10 +52,10 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 20 | Browser session/CSRF flow, active catalog, cart and exact cents state | 05, 06, 07 | A03, A20 | Pending |
 | 21 | Checkout UI, pending key/body recovery, authoritative order/deadline/payment/cancel views | 18, 20 | A03, A20 | Pending |
 | 22 | Admin catalog/stock/order/fulfillment UI with state/version conflict handling | 09, 19, 20 | A20 | Pending |
-| 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Complete for requested notification + confirmation-email slices: durable RabbitMQ consumer/owner APIs, leased local SMTP sender and audited same-email retry; production mail/realtime/UI and general replay remain later |
+| 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Complete for notification/email/realtime backend slices: durable consumers/owner APIs, leased local SMTP/admin recovery and API SignalR/Redis hints; frontend integration remains a later 23 slice, production mail/proxy/general replay later |
 | 24 | Versioned reporting projection, daily winning sales, range/auth tests and report UI | 19, 20, 23 | A17, A18, A21 | Pending |
 | 25 | Reproducible API/client/worker/proxy local composition, migration command, runtime DB roles and readiness | 22, 24 | A01, A16, A22 | Pending |
-| 26 | Deployment hardening/shared protected Data Protection keys; multi-worker/crash/uncertain commit/stale lease fault suite; retry/no-network-in-transaction evidence | 04, 18, 23, 24, 25 | A02, A12, A17–A19, A22, A23 | Pending |
+| 26 | Deployment hardening/shared protected Data Protection keys; SignalR proxy affinity/Upgrade/trusted forwarded headers; multi-worker/crash/uncertain commit/stale lease fault suite; retry/no-network-in-transaction evidence | 04, 18, 23, 24, 25 | A02, A12, A17–A19, A22, A23 | Pending |
 | 27 | Browser acceptance flows; cross-user/CSRF/auth regressions; structured redaction/config checks | 21, 22, 25, 26 | A02, A20, A22 | Pending |
 | 28 | Operational backlog/failure view, health/lag metrics, audited same-identity operator replay and recovery runbook | 25, 26, 27 | A19, A22 | Pending |
 | 29 | Full acceptance walkthrough; portfolio architecture/demo/interview guide and verified limitations | 28 | A01–A24 | Pending |
@@ -1272,3 +1272,80 @@ Existing already-Processed confirmations are not backfilled; blank/invalid immut
 3. **Vì sao Admin retry không tạo key mới hay sửa recipient?** Hiểu giữ cùng external operation để reconcile uncertainty, immutable snapshot, audit/risk acknowledgement và bounded new cycle; Sent không được resend.
 
 Suggested commit title (none supplied): `feat: add durable order-confirmation email delivery and recovery`.
+
+
+## Authenticated SignalR notification hints — 23 realtime backend (2026-11-13)
+
+### Scope and decisions
+
+Implements the latest request using existing NotificationCreated outbox events and durable Notifications/HTTP source of truth. No frontend is added; its integration remains a later milestone-23 slice per the request. Proxy configuration/affinity/shared protected cookie keys/forwarded-header deployment belongs explicitly to 26; no proxy config is implemented now. [ADR-024](adr/0024-signalr-notification-hints.md) records this extension and clarifies hints versus consumer/business completion.
+
+Inspected instructions/spec/architecture/status/ADRs, current code/tests, twelve existing migrations, package locks/SDK and clean initial Git status. Official .NET 10 SignalR Redis/auth/security/scale docs and implementation source verified supported async/backplane APIs. Official NuGet flagged Redis backplane 10.0.14 under Microsoft advisory GHSA-wr8v-9x5q-ggcm; new backplane/test client pin **10.0.15**, matching installed runtime, without suppressing auditing. SDK 10.0.115, existing EF/ASP.NET pins otherwise retained. Redis **8.10.3-alpine** pulled and digest pinned.
+
+### Acceptance delivered
+
+| Criterion | Behavior/evidence |
+| --- | --- |
+| Authenticated hub | /api/hubs/notifications requires Identity cookie on negotiate/connect, strict/canonical nonempty GUID user identifier; anonymous/ambiguous/missing identity rejected |
+| User isolation | No Subscribe/JoinOrderGroup/business methods; client query IDs do not change identity; Clients.User target derives from durable owner, not a selected group |
+| Browser security | HTTPS/dev-only opt-in, same-origin HTTP/WebSocket guard, explicit unsafe negotiation CSRF, no access_token query auth, existing bounded request policy; WebSockets-only negotiation supported |
+| Payload minimization | NotificationAvailable includes only EventId/NotificationId/OrderId; no address/body/amount/status/recipient/trace/full event. ConnectionReady has no payload |
+| Durable source of truth | Existing notification inbox/outbox transaction unchanged; realtime validates notification association/schema then disposes DB scope before dispatch; no realtime handled marker or business writes |
+| API-hosted delivery | Separate durable realtime RabbitMQ work/delay/retry/dead destination; API consumer only, Worker never hosts/addressed an in-memory hub |
+| Cross-instance backplane | Official AddStackExchangeRedis and same environment prefix; live API A consumes committed outbox while API B owns authenticated WebSockets; DI/hub managers are independent |
+| Duplicate tolerance | Same event republished delivers identical stable hint IDs with unchanged notification/inbox/read counts; dispatch success is not client receipt |
+| Dependency failure | Real Redis stop produces safe logging and finite broker retry/DLQ while notification HTTP remains readable; no offline Redis hint buffering/persistence claim |
+| Bounded lifecycle | Per-API main/retry subscriptions sequential per channel, prefetch 1–16, fresh scopes, five-second dispatch budget, bounded broker reconnect, expiry/server-shutdown closure |
+| Reconnect catch-up | Re-authenticate/reconnect, await ConnectionReady then refetch durable HTTP; offline hints not replayed. Actual auth-expiry timer closes existing socket |
+| Development/deployment contract | Digest-pinned loopback ephemeral Redis Compose healthy, no migration; documented affinity even with Redis, Upgrade/Origin/timeouts/trusted proxy/shared keys required in 26 |
+
+### Luồng chính (Vietnamese)
+
+Notification worker vẫn tạo Notification và NotificationCreated trong transaction PostgreSQL cùng inbox/outbox. Publisher gửi event đã commit vào RabbitMQ. Consumer chạy trong API lấy event từ queue realtime riêng, kiểm tra schema/identity và so với Notification trong DB để xác định đúng recipient. Scope DB kết thúc trước khi gọi IHubContext.Clients.User.
+
+Mỗi API bật official Redis backplane với cùng prefix. Vì vậy API A consume vẫn gửi được tới connection của user đang ở B; Worker không có hub trong bộ nhớ để gửi xuyên process. Client không chọn user ID hoặc join order group. Hint chỉ có ba ID ổn định; client cần đọc lại HTTP notification/order theo cookie của mình. Duplicate hint không tạo thêm dữ liệu durable.
+
+Redis/publish lỗi chỉ ảnh hưởng hint: retry qua một delay stage rồi DLQ, không sửa Notification/order. ACK sau dispatch attempt không chứng minh client đã nhận hay xử lý. Kết nối hết hạn cookie hoặc API shutdown sẽ đóng; reconnect lấy ConnectionReady rồi refetch. Redis outage cũng có thể làm mất hint trong lúc socket vẫn mở, nên frontend sau này cần refresh/focus/poll thích hợp. Proxy cần sticky session cho negotiation/WS, sẽ thực hiện trong 26.
+
+### Important files / schema
+
+- Api/Realtime/NotificationHub, NotificationUserIdProvider, NotificationHint: authenticated server identity, no client group API, minimal contract and readiness/expiry/shutdown semantics.
+- RealtimeSettings/RealtimeRegistration/RealtimeRequestGuard: opt-in Redis setup/private safe configuration, cookie/HTTPS/CSRF/Origin/transport/rate/size bounds and redacted dependency logging.
+- NotificationRealtimeDispatcher/RealtimeDeliveryHandler/RealtimeConsumerWorker: DB correlation, disposed scope before IHubContext, safe per-user hints, finite broker failure/poison path and bounded lifecycle.
+- Application/Messaging/RabbitMqSettings/RabbitMqTopology moved from Worker and RabbitMqSubscription extracted from existing subscription; Worker retains thin facade. No API->Worker project reference or new generic event-bus framework. Shared RabbitMQ.Client dependency reflected in all generated locks.
+- Api.Program exposes reusable Build with explicit application assembly for real Kestrel fixture; normal Main still runs the same API. Disabled realtime registers no broker/hub jobs.
+- Central official SignalR Redis/client 10.0.15 pins, API/test references, generated lockfiles, API appsettings/.env.example and Redis Compose profile.
+- RealtimeApiHost/RedisServer/HintConnection/RealtimeTests/RealtimeIdentityTests: actual Kestrel/WebSockets/PostgreSQL/RabbitMQ/Redis tests and service-free identity/config cases.
+- [Runbook/two-API demo](realtime.md), [ADR-024](adr/0024-signalr-notification-hints.md), spec/architecture/notification/messaging/testing/README and this status.
+- **No database migration/model change**; twelve existing migrations retained, durable source event and notification schema unchanged.
+
+### Exact checks and evidence
+
+All .NET commands use DOTNET_CLI_HOME=/tmp/orderflow-callbacks/dotnet-home and NUGET_PACKAGES=/tmp/orderflow-callbacks/packages. SDK/runtime are 10.0.115/10.0.15. Logs/TRX/artifacts stay outside the repository under /tmp/orderflow-realtime. No private Redis/RabbitMQ credentials/generated outputs were added, no developer database migration/reset and no commit/push/deploy.
+
+1. Added official SignalR 10.0.15 package pins/references/shared RabbitMQ infrastructure and generated locks with `dotnet restore OrderFlow.slnx --artifacts-path /tmp/orderflow-realtime/artifacts --disable-parallel -m:1` — exit 0, all six projects; `/tmp/orderflow-realtime-restore.log`. Final `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-realtime/artifacts --disable-parallel -m:1` — exit 0/all six projects, auditing enabled/no suppression; `/tmp/orderflow-realtime-restore-locked.log`.
+2. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-realtime/artifacts -m:1` — final exit 0, **0 warnings/errors**; `/tmp/orderflow-realtime-build-final.log`. Initial test-support build issues (logger class/member naming, namespace imports and async disposal/nullability in connection feature fixture) were corrected before acceptance. Early --no-build attempts against stale test artifacts are not counted as successful verification.
+3. Initial live fixture run failed seven cases with 404 controller discovery: direct builder invocation from the test assembly used the wrong application assembly. API Build now explicitly names its own assembly (normal Main still calls it), enabling real Kestrel fixture controller discovery. `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-realtime/artifacts -m:1 --filter 'FullyQualifiedName~Realtime' --logger 'trx;LogFilePrefix=realtime-compiled' --results-directory /tmp/orderflow-realtime/results` after successful complete build — exit 0, **14 passed**, no failed/skipped; `/tmp/orderflow-realtime-compiled.log`. UnitTests project has no matching cases, not a success skip/fallback.
+4. Added explicit transport-negotiation/shutdown and wrong-kind JSON cases, then `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-realtime/artifacts -m:1 --filter 'FullyQualifiedName~Realtime|FullyQualifiedName~OutboxPublishingTests|FullyQualifiedName~NotificationTests' --logger 'trx;LogFilePrefix=realtime-expanded' --results-directory /tmp/orderflow-realtime/results` — exit 0, **44 integration passed**, no failed/skipped, 1m8s; `/tmp/orderflow-realtime-expanded.log`, TRX `realtime-expanded_net10.0_20261113090319.trx`. Includes **16 new realtime cases** and existing publisher/notification regressions after shared transport extraction.
+5. Full `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-realtime/artifacts -m:1 --logger 'trx;LogFilePrefix=realtime-full' --results-directory /tmp/orderflow-realtime/results` — exit 0, **417 integration + 155 unit = 572 passed**, **0 failed/skipped**, integration duration **4m28s**. Baseline 556; adds **nine actual Kestrel/WebSocket/PostgreSQL/RabbitMQ/Redis cases** and **seven service-free strict-identity/config cases** in IntegrationTests. Evidence `/tmp/orderflow-realtime-full.log`; TRX `realtime-full_net10.0_20261113090851.trx` and `realtime-full_net10.0_20261113090852.trx`. No production/test code changed after this full run.
+6. EF CLI was initially unavailable in this session; `dotnet tool restore` restored repository-pinned dotnet-ef 10.0.14 successfully (`/tmp/orderflow-realtime-tool-restore.log`). `dotnet ef migrations has-pending-model-changes --project src/OrderFlow.Application --startup-project src/OrderFlow.Api --configuration Release --no-build` with ArtifactsPath=/tmp/orderflow-realtime/artifacts and nonconnecting design connection — exit 0, **no model drift**; `/tmp/orderflow-realtime-drift-final.log`. No new migration/schema change or idempotent migration script needed for this milestone.
+7. Pulled official Redis 8.10.3-alpine and pinned digest sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3; `/tmp/orderflow-realtime-redis-image.log`. Committed Compose profile `config --quiet` and dedicated `up -d --wait --wait-timeout 60 redis` — exit 0/**healthy** on loopback 16387. No bind-mount workaround or credentials in config/output. `down` removed only the dedicated container/network; Redis intentionally has no persistent volume. Logs `/tmp/orderflow-realtime-compose.log` and `...-compose-down.log`; developer services/data untouched.
+8. `git diff --check` — exit 0. Final documentation/API JSON/link/fence check passed, Git diff reviewed; moved transport source is retained in Application/Messaging, not discarded. No commit/push/deploy.
+
+Unverified/deferred: production proxy/affinity/shared protected DP keys (26), frontend catch-up/logout integration (later 23 slice), continuous connection revocation, production Redis auth/TLS/runtime roles/cluster/rolling deployment and independent OS-process kill/network partitions. Actual two-API Kestrel/backplane routing, Redis outage/finite DLQ/HTTP fallback, expiration and API shutdown are tested; no durable/exactly-once client delivery or production readiness claim.
+
+### Manual verification / trade-offs
+
+[Realtime runbook](realtime.md) supplies Redis setup, private API/worker configuration, two separate API process commands (A consumer true/B false), native official client test/demo and HTTP catch-up flow. Executable network demo: `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --filter 'FullyQualifiedName~Two_API_instances_Rabbit_on_A_reaches_owner_connections_on_B'`. It opens actual B WebSockets and observes A logs/hints over real Redis. The automated demo is two independent Kestrel hosts inside one test process, not an OS-process-kill claim; separate-process commands are provided for manual reproduction.
+
+Durable HTTP remains authoritative. Redis has no offline hint history; duplicates/loss are permitted and no business-consumer/client exactly-once acknowledgement exists. Existing sockets may remain open across Redis outages, so frontend catch-up cannot rely only on socket reconnect. Cookie/security-stamp changes are not continuously revalidated on established sockets; frontend must stop on logout and reconnect with current identity. Auth expiration and server shutdown close connections.
+
+No frontend/client app, proxy/affinity configuration, shared protected DP deployment, continuous connection-revocation service, automatic historical replay, Redis production auth/TLS/roles/cluster HA, independent OS-process/network partition/rolling deployment or production readiness claim. Direct two-port test setup avoids the future proxy; cookie-key sharing in tests is fixture-only. No user data deletion, developer DB migration/reset or commit/push/deploy.
+
+### Three interview questions
+
+1. **Vì sao hub/consumer phải ở API và cần Redis?** Hiểu connection thuộc process API, Worker in-memory hub không giữ connection ở process khác; official backplane chuyển message giữa các API.
+2. **Hint khác notification durable thế nào?** Hint có thể mất/trùng và không chứng minh client nhận; EventId/NotificationId ổn định để dedup/refetch, HTTP/inbox/outbox mới giữ dữ liệu nghiệp vụ.
+3. **Redis có bỏ được sticky session không?** Không với negotiation đang hỗ trợ; negotiate/connect vẫn cần đúng API. User identity đến từ cookie, không từ client group/query; proxy cấu hình ở 26.
+
+Suggested commit title (none supplied): `feat: add authenticated SignalR notification hints with Redis scale-out`.

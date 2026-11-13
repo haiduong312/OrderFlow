@@ -1,6 +1,6 @@
 using RabbitMQ.Client;
 
-namespace OrderFlow.Worker.Messaging;
+namespace OrderFlow.Application.Messaging;
 
 public sealed class RabbitMqSettings
 {
@@ -29,6 +29,14 @@ public sealed class RabbitMqSettings
     public string NotificationRetryExchange => Prefix + ".notifications.retry.v1";
     public string NotificationReadyExchange => Prefix + ".notifications.retry-ready.v1";
     public string NotificationDeadExchange => Prefix + ".notifications.dead.v1";
+
+    public string RealtimeQueue => Prefix + ".realtime.notifications.v1";
+    public string RealtimeRetryQueue => Prefix + ".realtime.notifications.retry.v1";
+    public string RealtimeDelayQueue => Prefix + ".realtime.notifications.delay.v1";
+    public string RealtimeDeadQueue => Prefix + ".realtime.notifications.dead.v1";
+    public string RealtimeRetryExchange => Prefix + ".realtime.retry.v1";
+    public string RealtimeReadyExchange => Prefix + ".realtime.retry-ready.v1";
+    public string RealtimeDeadExchange => Prefix + ".realtime.dead.v1";
 
     public void Validate()
     {

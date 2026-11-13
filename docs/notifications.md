@@ -1,6 +1,6 @@
 # Durable user notifications
 
-The RabbitMQ worker creates a local notification for the order owner from each supported order event. It commits Notification + consumer inbox + NotificationCreated outbox together, then ACKs the delivery. No email/realtime network call runs in that transaction. [Confirmation email](email-delivery.md) now adds a unique intention for confirmed events in the same transaction and sends separately. Broker confirms remain separate from this consumer's database completion.
+The RabbitMQ worker creates a local notification for the order owner from each supported order event. It commits Notification + consumer inbox + NotificationCreated outbox together, then ACKs the delivery. No email/realtime network call runs in that transaction. [Confirmation email](email-delivery.md) now adds a unique intention for confirmed events in the same transaction and sends separately. Broker confirms remain separate from this consumer's database completion. [Realtime hints](realtime.md) now dispatch NotificationCreated through an API-hosted consumer and Redis; HTTP remains authoritative.
 
 ## Enable locally
 
@@ -19,7 +19,7 @@ export Notifications__Prefetch=4
 dotnet run --project src/OrderFlow.Worker -c Release --no-build --no-restore --no-launch-profile
 ```
 
-Set ConnectionStrings__OrderFlow and RabbitMq__Password privately as in the linked runbooks; never put secrets in CLI arguments/tracked settings. Migration **20261112035709_AddNotifications** creates the notification schema/table, indexes, restrictive FKs and identity/read/inbox guards. No automatic startup migration or historical backfill. API startup registers read services but no RabbitMQ client/consumer. Seed commands suppress background jobs.
+Set ConnectionStrings__OrderFlow and RabbitMq__Password privately as in the linked runbooks; never put secrets in CLI arguments/tracked settings. Migration **20261112035709_AddNotifications** creates the notification schema/table, indexes, restrictive FKs and identity/read/inbox guards. No automatic startup migration or historical backfill. API read services remain independent; opt-in [realtime](realtime.md) separately registers its API-hosted NotificationCreated consumer. Seed commands suppress background jobs.
 
 Consumer and publisher flags are independent: use a separate process with only Notifications enabled if desired. The publisher declares notification queues/bindings before sending future events even if consumption is off. Events Published before this binding existed are not retroactively copied; old integration backlog requires a reviewed replay/backfill plan. Do not discard that backlog or automatically reprocess all prior events.
 

@@ -70,6 +70,20 @@ services:
       start_period: 5s
     stop_grace_period: 10s
 
+  redis:
+    profiles: ["dev", "realtime"]
+    image: redis:8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${ORDERFLOW_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+    stop_grace_period: 10s
+
 secrets:
   rabbitmq_password:
     file: ${ORDERFLOW_RABBIT_PASSWORD_FILE:-./.local/rabbitmq-password}

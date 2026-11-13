@@ -1,7 +1,7 @@
 using RabbitMQ.Client;
 using OrderFlow.Application.Modules.Notifications;
 
-namespace OrderFlow.Worker.Messaging;
+namespace OrderFlow.Application.Messaging;
 
 public static class RabbitMqTopology
 {
@@ -9,7 +9,7 @@ public static class RabbitMqTopology
     {
         // Finite path: work -> delay -> retry-work -> dead. No automatic cycle back to the first queue.
         foreach (var exchange in new[] { settings.Exchange, settings.RetryExchange, settings.RetryReadyExchange, settings.DeadExchange,
-            settings.NotificationRetryExchange, settings.NotificationReadyExchange, settings.NotificationDeadExchange })
+            settings.NotificationRetryExchange, settings.NotificationReadyExchange, settings.NotificationDeadExchange, settings.RealtimeRetryExchange, settings.RealtimeReadyExchange, settings.RealtimeDeadExchange })
             await channel.ExchangeDeclareAsync(exchange, ExchangeType.Topic, durable: true, autoDelete: false, cancellationToken: token);
         await QueueAsync(channel, settings.DeadQueue, settings.DeadExchange, null, settings, token);
         await QueueAsync(channel, settings.RetryQueue, settings.RetryReadyExchange, settings.DeadExchange, settings, token);
@@ -20,6 +20,11 @@ public static class RabbitMqTopology
         await QueueAsync(channel, settings.NotificationDelayQueue, settings.NotificationRetryExchange, settings.NotificationReadyExchange, settings, token, delay: true);
         await QueueAsync(channel, settings.NotificationQueue, settings.Exchange, settings.NotificationRetryExchange, settings, token,
             bindings: OrderNotificationEvent.SupportedTypes.Keys.ToArray());
+        await QueueAsync(channel, settings.RealtimeDeadQueue, settings.RealtimeDeadExchange, null, settings, token);
+        await QueueAsync(channel, settings.RealtimeRetryQueue, settings.RealtimeReadyExchange, settings.RealtimeDeadExchange, settings, token);
+        await QueueAsync(channel, settings.RealtimeDelayQueue, settings.RealtimeRetryExchange, settings.RealtimeReadyExchange, settings, token, delay: true);
+        await QueueAsync(channel, settings.RealtimeQueue, settings.Exchange, settings.RealtimeRetryExchange, settings, token,
+            bindings: ["notifications.notification-created"]);
     }
 
     private static async Task QueueAsync(IChannel channel, string queue, string exchange, string? deadExchange,

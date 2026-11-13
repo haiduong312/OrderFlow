@@ -1,3 +1,4 @@
+using OrderFlow.Application.Messaging;
 using RabbitMQ.Client.Exceptions;
 
 namespace OrderFlow.Worker.Messaging;

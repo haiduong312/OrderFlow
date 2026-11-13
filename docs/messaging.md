@@ -118,3 +118,5 @@ Structured Worker events 1801/1802/1803 report safe failure code/attempt/uncerta
 ## Verification and limits
 
 See [testing](testing.md) for the focused command and [status](implementation-status.md) for executed results. Tests include real broker unavailability, mandatory return, actual full-queue NACK, positive confirmation, dropped ACK followed by duplicate delivery, local acknowledgement rollback, concurrent claims, stale owner, bounded exhaustion, cancellation recovery, uncommitted-row isolation, immutable facts, populated migration and persistent broker restart. No production cluster failover/network partition/OS kill, end-to-end business consumption or universal exactly-once guarantee is claimed.
+
+Realtime NotificationCreated dispatch now uses a separate durable realtime work/delay/retry/dead topology and an API-hosted consumer; see [realtime setup/demo](realtime.md). Broker transport settings/topology/subscription are shared in Application/Messaging; Worker still owns the producer publisher and durable order-notification processing. API owns hub connections and official Redis backplane. No worker-local in-memory hub is used.
