@@ -36,6 +36,13 @@ public sealed class FrontendBrowserTests(PostgresServer server, ITestOutputHelpe
     [InlineData("loading_empty_error")]
     [InlineData("unavailable_restore")]
     [InlineData("responsive_navigation")]
+    [InlineData("catalog_filter_pages")]
+    [InlineData("catalog_categories_detail")]
+    [InlineData("cart_quantities_restore")]
+    [InlineData("cart_price_change")]
+    [InlineData("cart_archived_unavailable")]
+    [InlineData("cart_account_scope")]
+    [InlineData("cart_cross_tab")]
     public async Task Real_browser_session_and_navigation_flow(string scenario)
     {
         var root = RepositoryRoot();
@@ -47,6 +54,7 @@ public sealed class FrontendBrowserTests(PostgresServer server, ITestOutputHelpe
         var password = "Aa1!" + Guid.NewGuid().ToString("N");
         var emailA = "browser-a-" + Guid.NewGuid().ToString("N") + "@example.invalid";
         var emailB = "browser-b-" + Guid.NewGuid().ToString("N") + "@example.invalid";
+        var adminEmail = "browser-admin-" + Guid.NewGuid().ToString("N") + "@example.invalid";
         await using var app = Api.Program.Build(["--environment", "Development"], builder =>
         {
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -76,7 +84,7 @@ public sealed class FrontendBrowserTests(PostgresServer server, ITestOutputHelpe
                 var db = scope.ServiceProvider.GetRequiredService<OrderFlowDbContext>();
                 await DevelopmentSeeder.SeedRolesAsync(db, startup.Token);
                 var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-                var admin = await User("browser-admin-" + Guid.NewGuid().ToString("N") + "@example.invalid", "Admin");
+                var admin = await User(adminEmail, "Admin");
                 await User(emailA, "Customer"); await User(emailB, "Customer");
                 var category = Category.Create("Browser fixture", clock.GetUtcNow());
                 var product = Product.Create("BROWSER-" + Guid.NewGuid().ToString("N"), "Browser fixture product", "",
@@ -85,6 +93,35 @@ public sealed class FrontendBrowserTests(PostgresServer server, ITestOutputHelpe
                 var balance = await db.InventoryBalances.SingleAsync(row => row.ProductId == product.Id, startup.Token);
                 db.StockMovements.Add(balance.Change(Guid.NewGuid(), StockMovementKind.Receipt, 100, "Browser fixture receipt", admin, clock.GetUtcNow()));
                 await db.SaveChangesAsync(startup.Token); productId = product.Id;
+                if (scenario.StartsWith("catalog_", StringComparison.Ordinal) || scenario.StartsWith("cart_", StringComparison.Ordinal))
+                {
+                    var desk = Category.Create("Desk essentials", clock.GetUtcNow());
+                    var travel = Category.Create("Travel essentials", clock.GetUtcNow());
+                    var hidden = Category.Create("Archived collection", clock.GetUtcNow());
+                    hidden.Archive(hidden.Version);
+                    db.AddRange(desk, travel, hidden);
+                    if (scenario == "catalog_categories_detail")
+                        for (var index = 1; index <= 21; index++) db.Add(Category.Create($"Collection {index:00}", clock.GetUtcNow()));
+                    await db.SaveChangesAsync(startup.Token);
+                    for (var index = 1; index <= 14; index++) await ShoppingProduct($"Alpha {index:00}", 2.00m, desk);
+                    await ShoppingProduct("Cents A", 0.10m, desk);
+                    await ShoppingProduct("Cents B", 0.20m, travel);
+                    await ShoppingProduct("Out of stock", 1.00m, travel, stock: 0);
+                    await ShoppingProduct("Hidden product", 1.00m, desk, archived: true);
+                    await ShoppingProduct("Category hidden", 1.00m, hidden);
+
+                    async Task ShoppingProduct(string name, decimal price, Category owner, int stock = 100, bool archived = false)
+                    {
+                        var row = Product.Create("SHOP-" + Guid.NewGuid().ToString("N"), name, "A useful fixture for everyday work.",
+                            UsdMoney.FromDecimal(price), owner.Id, clock.GetUtcNow());
+                        if (archived) row.Archive(row.Version);
+                        db.Add(row); await db.SaveChangesAsync(startup.Token);
+                        if (stock == 0) return;
+                        var inventory = await db.InventoryBalances.SingleAsync(value => value.ProductId == row.Id, startup.Token);
+                        db.StockMovements.Add(inventory.Change(Guid.NewGuid(), StockMovementKind.Receipt, stock, "Browser shopping receipt", admin, clock.GetUtcNow()));
+                        await db.SaveChangesAsync(startup.Token);
+                    }
+                }
 
                 async Task<Guid> User(string email, string role)
                 {
@@ -99,11 +136,12 @@ public sealed class FrontendBrowserTests(PostgresServer server, ITestOutputHelpe
             var start = new ProcessStartInfo("node") { WorkingDirectory = client, UseShellExecute = false,
                 RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var argument in new[] { cli, "test", "--project=chromium", "--grep", scenario + "$" }) start.ArgumentList.Add(argument);
-            var artifacts = Path.Combine(Path.GetTempPath(), "orderflow-frontend", "browser-artifacts", scenario);
+            var artifacts = Path.Combine(Path.GetTempPath(), "orderflow-shopping", "browser-artifacts", scenario);
             start.Environment["ORDERFLOW_API_TARGET"] = address;
             start.Environment["ORDERFLOW_BROWSER_PORT"] = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
             start.Environment["ORDERFLOW_BROWSER_OUTPUT"] = artifacts;
             start.Environment["ORDERFLOW_BROWSER_CUSTOMER_A"] = emailA; start.Environment["ORDERFLOW_BROWSER_CUSTOMER_B"] = emailB;
+            start.Environment["ORDERFLOW_BROWSER_ADMIN"] = adminEmail;
             start.Environment["ORDERFLOW_BROWSER_PASSWORD"] = password;
             start.Environment["ORDERFLOW_BROWSER_PRODUCT"] = productId.ToString("D");
             start.Environment["ORDERFLOW_BROWSER_CONTROL"] = control;

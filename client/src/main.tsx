@@ -8,10 +8,16 @@ import { SessionController } from './auth/session';
 import { SessionProvider } from './auth/context';
 import { App, AppErrorBoundary } from './App';
 import './styles.css';
+import { CART_KEY, useCart } from './state/cart';
 
 const queries = createQueryClient(); // One stable instance for the browser application.
 const session = new SessionController(queries, new ApiClient());
 session.start();
+// Same-origin tabs share this device cart. Last persisted write wins; purchases are never inferred.
+const syncCart = (event: StorageEvent) => {
+    if (event.key === CART_KEY || event.key === null) void useCart.persist.rehydrate();
+};
+window.addEventListener('storage', syncCart);
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
         <AppErrorBoundary>
@@ -29,4 +35,5 @@ if (import.meta.hot)
     import.meta.hot.dispose(() => {
         session.dispose();
         queries.clear();
+        window.removeEventListener('storage', syncCart);
     });

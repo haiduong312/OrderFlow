@@ -11,6 +11,11 @@ export function Home() {
                 eyebrow="A CLEARER VIEW"
                 title="Everything in order."
                 description="Your account, your orders, and a little more peace of mind."
+                action={
+                    <Link className="button secondary" to="/products">
+                        Browse products <Icon name="arrow" size={17} />
+                    </Link>
+                }
             />
             <div className="overview-grid">
                 <section className="welcome-card">

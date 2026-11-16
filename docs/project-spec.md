@@ -306,3 +306,8 @@ Both keys have a 30-second absolute lifetime anchored before the source read, bo
 ## Implemented React session foundation
 
 [ADR-027](adr/0027-react-session-foundations.md) / [frontend runbook](frontend.md) define the shipped milestone-05 and auth/session slice of 20: stable React/TypeScript/Vite tooling, same-origin proxy, typed ProblemDetails/cookie/CSRF fetch, stable user-scoped query cache, pre-identity-change private purge/fences, UI-only density persistence and accessible responsive login/register/logout/current-user routes. A real read-only Customer orders list provides private data for scope/isolation acceptance without implementing checkout. No fake success API, persisted auth/role state or frontend business authority is added. Browser auth/proxy/cache/navigation acceptance is now tested; full business UI/deployment acceptance remains later.
+
+
+## Implemented customer browsing/cart — milestone 20
+
+[ADR-028](adr/0028-catalog-cart.md) and the [frontend runbook](frontend.md) define public list/detail/filter/sort/pagination and the browser-local shared-device cart. All query inputs belong in URL/keys; obsolete fetches honor AbortSignal and new pages show loading. Persist only bounded validated IDs/quantities, use immutable Zustand actions and exact bigint-cent estimates from Query DTOs. Reload restores intent; account changes retain this explicitly labeled device cart while private queries remain isolated. Cart add/review is not a reservation or quote. Fresh detail requests can still observe ADR-025's bounded server-cache staleness; checkout must validate eligibility/prices/available stock transactionally. Cart errors/unavailable rows remain visible and removable. Actual checkout/recovery/payment UI remains milestone 21.

@@ -4,11 +4,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useSession } from '../auth/context';
 import { healthOptions } from '../api/queries';
 import { usePreferences } from '../state/preferences';
+import { useCart } from '../state/cart';
 import { BrandMark, ErrorPanel, Icon } from './ui';
 
 export function Layout() {
     const { session, controller } = useSession();
     const { mobileOpen, setMobileOpen, density, setDensity } = usePreferences();
+    const cartCount = useCart((state) => state.items.reduce((count, item) => count + item.quantity, 0));
     const location = useLocation();
     const navigate = useNavigate();
     const [logoutError, setLogoutError] = useState<unknown>(null);
@@ -120,6 +122,12 @@ export function Layout() {
                         <Icon name="orders" />
                         My orders
                     </NavLink>
+                    <NavLink to="/products">
+                        <Icon name="product" /> Products
+                    </NavLink>
+                    <NavLink to="/cart">
+                        <Icon name="cart" /> Cart <span className="nav-cart-count">{cartCount}</span>
+                    </NavLink>
                     <NavLink to="/account">
                         <Icon name="account" />
                         My account
@@ -168,15 +176,19 @@ export function Layout() {
                     <span className="topbar-title">
                         Your workspace <span className="topbar-divider">/</span>
                         <span className="muted">
-                            {location.pathname.startsWith('/orders')
-                                ? 'Orders'
-                                : location.pathname === '/account'
-                                  ? 'Account'
-                                  : location.pathname === '/login'
-                                    ? 'Sign in'
-                                    : location.pathname === '/register'
-                                      ? 'Create account'
-                                      : 'Overview'}
+                            {location.pathname.startsWith('/products')
+                                ? 'Products'
+                                : location.pathname === '/cart'
+                                  ? 'Cart'
+                                  : location.pathname.startsWith('/orders')
+                                    ? 'Orders'
+                                    : location.pathname === '/account'
+                                      ? 'Account'
+                                      : location.pathname === '/login'
+                                        ? 'Sign in'
+                                        : location.pathname === '/register'
+                                          ? 'Create account'
+                                          : 'Overview'}
                         </span>
                     </span>
                     <div className="topbar-actions">

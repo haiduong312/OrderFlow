@@ -5,7 +5,18 @@ export function Icon({
     name,
     size = 20,
 }: {
-    name: 'home' | 'orders' | 'account' | 'arrow' | 'check' | 'menu' | 'close' | 'logout' | 'shield';
+    name:
+        | 'home'
+        | 'orders'
+        | 'account'
+        | 'arrow'
+        | 'check'
+        | 'menu'
+        | 'close'
+        | 'logout'
+        | 'shield'
+        | 'product'
+        | 'cart';
     size?: number;
 }) {
     const paths = {
@@ -18,6 +29,8 @@ export function Icon({
         close: 'm6 6 12 12M6 18 18 6',
         logout: 'M9 4H4v16h5m5-13 5 5-5 5M8 12h11',
         shield: 'm12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Zm-4 9 3 3 5-6',
+        product: 'm12 3 9 5-9 5-9-5Zm-9 5v10l9 5 9-5V8M12 13v10M7.5 5.5l9 5',
+        cart: 'M3 3h2l3 13h11l3-9H6m3 14h.01M19 21h.01',
     };
     return (
         <svg

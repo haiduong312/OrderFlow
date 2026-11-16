@@ -34,6 +34,35 @@ export interface OrderParameters {
     status?: OrderStatus;
 }
 
+export interface Category {
+    id: string;
+    name: string;
+    isActive: boolean;
+    version: number;
+}
+export interface Product {
+    id: string;
+    sku: string;
+    name: string;
+    description: string;
+    price: Money;
+    currency: 'USD';
+    category: Omit<Category, 'version'>;
+    isActive: boolean;
+    version: number;
+    available: number;
+}
+export interface CategoryParameters {
+    q: string;
+    page: number;
+    pageSize: number;
+    sort: 'newest' | 'name';
+}
+export interface ProductParameters extends Omit<CategoryParameters, 'sort'> {
+    categoryId: string | null;
+    sort: 'newest' | 'name' | 'price-asc' | 'price-desc';
+}
+
 export function validateUser(value: User): User {
     if (
         !value ||

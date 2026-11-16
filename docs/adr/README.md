@@ -39,4 +39,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-027](0027-react-session-foundations.md) | React session UX, typed cookie/CSRF fetch, scoped query lifecycle and UI-only persistence |
 
+| [ADR-028](0028-catalog-cart.md) | URL-scoped customer browsing, bounded device cart persistence and advisory exact-money review |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

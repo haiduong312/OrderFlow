@@ -7,6 +7,9 @@ import { Home } from './pages/Home';
 import { AuthPage } from './pages/Auth';
 import { Account } from './pages/Account';
 import { Orders } from './pages/Orders';
+import { Catalog } from './pages/Catalog';
+import { ProductDetail } from './pages/ProductDetail';
+import { Cart } from './pages/Cart';
 
 export class AppErrorBoundary extends Component<PropsWithChildren, { failed: boolean }> {
     state = { failed: false };
@@ -32,6 +35,9 @@ export function App() {
         <Routes>
             <Route element={<Layout />}>
                 <Route index element={<Home />} />
+                <Route path="products" element={<Catalog />} />
+                <Route path="products/:id" element={<ProductDetail />} />
+                <Route path="cart" element={<Cart />} />
                 <Route path="login" element={<AuthPage key="login" />} />
                 <Route path="register" element={<AuthPage key="register" register />} />
                 <Route
