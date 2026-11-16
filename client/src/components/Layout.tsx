@@ -5,6 +5,7 @@ import { useSession } from '../auth/context';
 import { healthOptions } from '../api/queries';
 import { usePreferences } from '../state/preferences';
 import { useCart } from '../state/cart';
+import { LiveUpdates } from '../realtime/context';
 import { BrandMark, ErrorPanel, Icon } from './ui';
 
 export function Layout() {
@@ -128,6 +129,9 @@ export function Layout() {
                     <NavLink to="/cart">
                         <Icon name="cart" /> Cart <span className="nav-cart-count">{cartCount}</span>
                     </NavLink>
+                    <NavLink to="/notifications">
+                        <Icon name="orders" /> Notifications
+                    </NavLink>
                     <NavLink to="/account">
                         <Icon name="account" />
                         My account
@@ -242,6 +246,7 @@ export function Layout() {
                     {logoutError != null && (
                         <ErrorPanel title="We could not confirm sign out" error={logoutError} />
                     )}
+                    {user && <LiveUpdates />}
                     <Outlet />
                 </main>
                 <footer className="footer">

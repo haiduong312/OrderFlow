@@ -34,6 +34,85 @@ export interface OrderParameters {
     status?: OrderStatus;
 }
 
+export interface OrderItem {
+    productId: string;
+    sku: string;
+    name: string;
+    unitPrice: Money;
+    quantity: number;
+    lineTotal: Money;
+}
+export interface CreatedOrder {
+    id: string;
+    status: OrderStatus;
+    version: number;
+    createdAt: string;
+    expiresAt: string;
+    total: Money;
+    currency: 'USD';
+    items: OrderItem[];
+}
+export interface OrderDetail extends OrderSummary {
+    items: OrderItem[];
+    history: {
+        version: number;
+        fromStatus: OrderStatus | null;
+        status: OrderStatus;
+        actorKind: string;
+        actorUserId: string | null;
+        occurredAt: string;
+        reason: string;
+    }[];
+}
+export interface PaymentAttempt {
+    id: string;
+    orderId: string;
+    status: 'Queued' | 'Pending' | 'Unknown' | 'Failed' | 'Captured';
+    amount: Money;
+    currency: 'USD';
+    createdAt: string;
+    updatedAt: string;
+    observedProviderState: 'Pending' | 'Succeeded' | 'Failed' | null;
+    needsAttention: boolean;
+    lastErrorCode: string | null;
+}
+export interface PaymentStatus {
+    orderId: string;
+    observedAt: string;
+    page: number;
+    pageSize: number;
+    attempts: PaymentAttempt[];
+    attemptCount: number;
+    captures: {
+        id: string;
+        attemptId: string;
+        amount: Money;
+        currency: 'USD';
+        allocated: boolean;
+        recordedAt: string;
+    }[];
+    captureCount: number;
+    refunds: {
+        id: string;
+        captureId: string;
+        amount: Money;
+        currency: 'USD';
+        status: 'Pending' | 'Succeeded' | 'NeedsReview';
+        createdAt: string;
+        updatedAt: string;
+        succeededAt: string | null;
+    }[];
+    refundCount: number;
+}
+export interface CustomerNotification {
+    id: string;
+    sourceEventId: string;
+    type: string;
+    orderId: string;
+    createdAt: string;
+    readAt: string | null;
+}
+
 export interface Category {
     id: string;
     name: string;

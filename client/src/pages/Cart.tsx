@@ -311,6 +311,9 @@ export function Cart() {
                                 Sign in to your account <Icon name="arrow" size={16} />
                             </Link>
                         )}
+                        <Link className="button secondary full" to="/checkout">
+                            Continue to checkout
+                        </Link>
                         <p className="cart-device-note">
                             Using a shared device? Clear your cart when finished. Signing out keeps this
                             browser cart.

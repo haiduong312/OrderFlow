@@ -94,7 +94,7 @@ dotnet run --project src/OrderFlow.Api -c Release --no-build --no-restore --no-l
 
 Run the normal Worker with Notifications/OutboxPublishing. Use an authenticated official SignalR client (the test helper is a complete native example) to negotiate/connect directly to B with its cookie/CSRF token, then create/cancel an order and wait for durable notification processing. A logs 2403; the intended B connection receives only the three-ID hint and refetches. Duplicate the same committed event through the controlled tests; no new durable notification is created. Stop Redis to observe bounded hint failure/DLQ while HTTP notifications remain available, then reconnect/refetch after recovery. Tests refresh randomly mapped Redis fixture ports after restart; Compose uses a fixed host port.
 
-Normal same-user local .NET processes typically share their default Data Protection key directory/application name; explicit protected shared key storage is still required for deployment. The automated demo shares an ephemeral test key provider. Do not infer production cookie continuity or proxy readiness from that fixture. Direct localhost ports intentionally avoid the not-yet-implemented proxy/affinity configuration. Frontend integration remains a later milestone-23 slice.
+Normal same-user local .NET processes typically share their default Data Protection key directory/application name; explicit protected shared key storage is still required for deployment. The automated demo shares an ephemeral test key provider. Do not infer production cookie continuity or proxy readiness from that fixture. Direct localhost ports intentionally avoid the not-yet-implemented proxy/affinity configuration. Frontend integration now ships under [ADR-029](adr/0029-checkout-recovery-and-live-ui.md) with the feature flag and same-origin Vite WebSocket proxy documented in the [frontend runbook](frontend.md).
 
 ## Proxy obligations — implement in milestone 26
 
@@ -111,3 +111,8 @@ dotnet test OrderFlow.slnx -c Release --no-build --no-restore --filter 'FullyQua
 ```
 
 Tests cover strict/canonical user identifiers, opt-in/private config, anonymous/CSRF/origin/token/transport rejection, cross-user isolation/unknown groups, two-API backplane, payload minimization, duplicate tolerance, invalid schema/data correlation, real Redis failure/DLQ/HTTP fallback, auth expiration/reconnect catch-up and API shutdown. Synchronization uses real ConnectionReady, client/broker callbacks and safe dependency log signals, not arbitrary sleeps. Exact results/limitations are in [status](implementation-status.md).
+
+
+## Browser client now available
+
+ADR-029 adds official SignalR JS 10.0.11, cookie/CSRF negotiation, synchronous session-stop, bounded reconnect, UUID hint invalidation/dedup and ConnectionReady/reconnect durable refetch. Enable VITE_ORDERFLOW_REALTIME=true with the existing API Realtime configuration. Checkout remains usable with realtime off; active order/payment/notification views also poll/refetch. No production affinity or SkipNegotiation bypass was added. Browser E2E uses actual Redis/WebSockets and network abort; existing broker/two-API tests remain the transport evidence.

@@ -85,7 +85,10 @@ export function ErrorPanel({
             <p>
                 {api?.code === 'antiforgery_failed'
                     ? 'Your security check has expired. Try again to get a fresh check.'
-                    : (api?.message ?? 'We could not reach or confirm the service. Please try again.')}
+                    : (api?.message ??
+                      (error instanceof Error && error.name === 'RecoveryError'
+                          ? error.message
+                          : 'We could not reach or confirm the service. Please try again.'))}
             </p>
             {api && (
                 <p className="error-reference">

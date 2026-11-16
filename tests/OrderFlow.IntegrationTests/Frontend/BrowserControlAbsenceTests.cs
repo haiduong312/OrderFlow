@@ -13,5 +13,8 @@ public sealed class BrowserControlAbsenceTests
         using var get = await client.GetAsync("/api/_browser/advance-clock");
         using var post = await client.PostAsync("/api/_browser/advance-clock", null);
         Assert.Equal(HttpStatusCode.NotFound, get.StatusCode); Assert.Equal(HttpStatusCode.NotFound, post.StatusCode);
+        using var checkoutGet = await client.GetAsync("/api/_checkout-ui/submit");
+        using var checkoutPost = await client.PostAsync("/api/_checkout-ui/submit", null);
+        Assert.Equal(HttpStatusCode.NotFound, checkoutGet.StatusCode); Assert.Equal(HttpStatusCode.NotFound, checkoutPost.StatusCode);
     }
 }

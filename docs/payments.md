@@ -130,3 +130,8 @@ The historical submission-only limitations above describe ADR-018. [ADR-019](adr
 ## Durable execution and reconciliation now available
 
 [ADR-020](adr/0020-refund-execution-and-payment-reconciliation.md) / [recovery runbook](payment-recovery.md) supersede earlier refund-delivery/reconciliation deferrals. Enable PaymentReconciliation and RefundProcessing independently; lookup results use the same validated settlement as callbacks, and compensation uses lookup-before-refund with the original immutable key. Pending includes uncertain delivery, Succeeded is terminal, NeedsReview is stopped work. The provider must retain idempotency/capture/lookup identities across timeout/restart. No general returns/customer refunds or external exactly-once guarantee is introduced.
+
+
+## Customer UI and safe financial reads
+
+[ADR-029](adr/0029-checkout-recovery-and-live-ui.md) / [frontend recovery runbook](frontend.md) now implement persistent per-user checkout/payment keys, owner detail/cancel and safe paginated payment-status. GET `/api/orders/{orderId}/payment-status?page=1&pageSize=20` exposes attempts, allocated/unallocated captures and refund Pending/Succeeded/NeedsReview without provider secrets; strict Customer/owner authorization and no-store apply. Payment initiation remains 202 intention, not payment success. The simulator still has no customer redirect/UI contract: use the existing Development/Testing operator API/workers/callback/reconciliation workflow, keep secrets out of the browser, and never use return parameters as settlement evidence.

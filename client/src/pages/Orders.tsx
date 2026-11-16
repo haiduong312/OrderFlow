@@ -83,8 +83,23 @@ function OrderList({
                 eyebrow="YOUR ORDERS"
                 title="Orders, at a glance."
                 description="Your latest order states and confirmed totals, straight from OrderFlow."
+                action={
+                    <button
+                        className="button secondary"
+                        onClick={() => {
+                            void orders.refetch();
+                        }}
+                    >
+                        Refresh orders
+                    </button>
+                }
             />
             <section className="orders-card card">
+                {orders.isFetching && !orders.isPending && (
+                    <p className="notice" role="status">
+                        Refreshing your orders…
+                    </p>
+                )}
                 <div className="orders-toolbar">
                     <div>
                         <h2>My orders</h2>
@@ -154,7 +169,9 @@ function OrderList({
                                 {orders.data.items.map((order) => (
                                     <tr key={order.id}>
                                         <td data-label="Order">
-                                            <code>{order.id}</code>
+                                            <Link className="text-link" to={`/orders/${order.id}`}>
+                                                <code>{order.id}</code>
+                                            </Link>
                                         </td>
                                         <td data-label="Created">
                                             {new Date(order.createdAt).toLocaleDateString('en-US', {

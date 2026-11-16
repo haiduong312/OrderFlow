@@ -34,6 +34,7 @@ public class Program
         builder.Services.AddScoped<AdminAuditService>();
         builder.Services.AddScoped<OrderLifecycleService>();
         builder.Services.AddScoped<PaymentInitiationService>();
+        builder.Services.AddScoped<CustomerPaymentStatus>();
         builder.Services.AddSingleton(_ => PaymentCallbackSettings.Read(builder.Configuration));
         builder.Services.AddScoped<PaymentCallbackReceipt>();
         configure?.Invoke(builder);

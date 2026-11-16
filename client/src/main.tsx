@@ -9,10 +9,14 @@ import { SessionProvider } from './auth/context';
 import { App, AppErrorBoundary } from './App';
 import './styles.css';
 import { CART_KEY, useCart } from './state/cart';
+import { NotificationRealtime } from './realtime/notifications';
+import { RealtimeProvider } from './realtime/context';
 
 const queries = createQueryClient(); // One stable instance for the browser application.
 const session = new SessionController(queries, new ApiClient());
 session.start();
+const realtime = new NotificationRealtime(session, import.meta.env.VITE_ORDERFLOW_REALTIME === 'true');
+realtime.start();
 // Same-origin tabs share this device cart. Last persisted write wins; purchases are never inferred.
 const syncCart = (event: StorageEvent) => {
     if (event.key === CART_KEY || event.key === null) void useCart.persist.rehydrate();
@@ -24,7 +28,9 @@ createRoot(document.getElementById('root')!).render(
             <QueryClientProvider client={queries}>
                 <SessionProvider controller={session}>
                     <BrowserRouter>
-                        <App />
+                        <RealtimeProvider value={realtime}>
+                            <App />
+                        </RealtimeProvider>
                     </BrowserRouter>
                 </SessionProvider>
             </QueryClientProvider>
@@ -34,6 +40,7 @@ createRoot(document.getElementById('root')!).render(
 if (import.meta.hot)
     import.meta.hot.dispose(() => {
         session.dispose();
+        realtime.dispose();
         queries.clear();
         window.removeEventListener('storage', syncCart);
     });

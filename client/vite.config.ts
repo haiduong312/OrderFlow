@@ -11,7 +11,7 @@ export default defineConfig({
     plugins: [react()],
     server: {
         host: '127.0.0.1',
-        proxy: { '/api': { target, changeOrigin: false } },
+        proxy: { '/api': { target, changeOrigin: false, ws: true } },
     },
     test: { include: ['tests/**/*.test.ts'], environment: 'node', clearMocks: true },
 });

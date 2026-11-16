@@ -2035,3 +2035,200 @@ td small {
         padding: 24px;
     }
 }
+
+/* Checkout recovery, authoritative order details and durable notifications. */
+.action-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin: 22px 0;
+}
+.checkout-panel,
+.order-overview,
+.order-lines,
+.payment-activity,
+.order-history {
+    padding: 30px;
+    margin: 24px 0;
+    min-width: 0;
+}
+.checkout-panel > h2,
+.order-overview > h2,
+.order-lines > h2,
+.payment-activity > h2,
+.order-history > h2 {
+    margin-bottom: 16px;
+}
+.checkout-panel p,
+.order-overview > p,
+.payment-activity > p {
+    margin: 12px 0;
+    font-size: 13px;
+}
+.checkout-lines {
+    list-style: none;
+    padding: 0;
+    margin: 24px 0;
+}
+.checkout-lines li {
+    padding: 15px 0;
+    display: flex;
+    gap: 20px;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+}
+.checkout-lines li span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.check-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 12px;
+    line-height: 1.8;
+    margin: 18px 0;
+}
+.check-label input {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+    margin-top: 3px;
+    accent-color: var(--teal);
+}
+.abandonment {
+    border-color: #eaded0;
+}
+.abandonment h2 {
+    font-size: 16px;
+}
+.reservation-clock {
+    padding: 18px;
+    margin: 20px 0;
+    border-radius: 10px;
+    background: #edf4f0;
+    color: var(--teal);
+}
+.reservation-clock p {
+    font-size: 11px;
+    line-height: 1.8;
+    margin-top: 8px;
+}
+.order-overview > .badge {
+    margin-bottom: 16px;
+}
+.order-lines article {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--border);
+}
+.order-lines article > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.order-lines article > strong {
+    flex-shrink: 0;
+}
+.order-lines article p {
+    font-size: 12px;
+    margin-top: 5px;
+}
+.payment-activity > h3 {
+    margin: 26px 0 12px;
+    font-size: 15px;
+}
+.payment-activity article {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+.payment-activity article code {
+    font-size: 11px;
+    color: var(--muted);
+}
+.order-history ol {
+    margin: 24px 0 0;
+    padding-left: 20px;
+}
+.order-history li {
+    padding: 0 0 20px 10px;
+    font-size: 13px;
+}
+.order-history li span {
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 7px;
+}
+.live-updates {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 15px;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 24px;
+}
+.live-updates .text-button {
+    font-size: 11px;
+}
+.notification-list article {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 22px;
+    padding: 26px;
+    border-bottom: 1px solid var(--border);
+}
+.notification-list article > div {
+    min-width: 0;
+}
+.notification-list article.unread {
+    background: #f2f8f4;
+}
+.notification-list article h2 {
+    font-size: 17px;
+    margin: 12px 0;
+}
+.notification-list article p {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+.notification-list article button {
+    flex-shrink: 0;
+}
+@media (max-width: 700px) {
+    .checkout-panel,
+    .order-overview,
+    .order-lines,
+    .payment-activity,
+    .order-history {
+        padding: 22px;
+    }
+    .notification-list article {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 22px;
+    }
+    .order-lines article {
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .payment-activity .pagination {
+        padding-inline: 0;
+        flex-wrap: wrap;
+    }
+    .payment-activity .pagination > div {
+        flex-wrap: wrap;
+    }
+}

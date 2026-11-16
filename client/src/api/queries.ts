@@ -63,6 +63,8 @@ export const ordersOptions = (
 ) =>
     queryOptions({
         queryKey: keys.orders(userId, parameters),
+        staleTime: 0,
+        refetchInterval: 30_000,
         queryFn: ({ signal }) =>
             scope.guard(userId, async () => {
                 const query = new URLSearchParams({

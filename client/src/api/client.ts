@@ -78,6 +78,9 @@ interface RequestOptions {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body?: unknown;
     signal?: AbortSignal;
+    bodyText?: string;
+    idempotencyKey?: string;
+    timeoutMs?: number;
 }
 
 export class ApiClient {
@@ -96,6 +99,11 @@ export class ApiClient {
     async refreshCsrf(): Promise<void> {
         this.invalidateCsrf();
         await this.antiforgery();
+    }
+
+    async antiforgeryHeaders(): Promise<Record<string, string>> {
+        const token = await this.antiforgery();
+        return { [token.headerName]: token.requestToken };
     }
 
     private antiforgery(): Promise<Csrf> {
@@ -132,20 +140,29 @@ export class ApiClient {
         }
         const method = options.method ?? 'GET';
         const headers = new Headers({ Accept: 'application/json' });
-        if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+        if (options.body !== undefined && options.bodyText !== undefined)
+            throw new Error('Supply one request body.');
+        if (options.body !== undefined || options.bodyText !== undefined)
+            headers.set('Content-Type', 'application/json');
+        if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
         if (method !== 'GET') {
             const token = await this.antiforgery();
             headers.set(token.headerName, token.requestToken);
         }
         const requestEpoch = this.csrfEpoch;
+        const timeout = options.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : undefined;
+        const signal =
+            timeout && options.signal
+                ? AbortSignal.any([timeout, options.signal])
+                : (timeout ?? options.signal);
         const response = await this.transport(path, {
             method,
             headers,
-            signal: options.signal,
+            signal,
             credentials: 'same-origin',
             cache: 'no-store',
             redirect: 'error',
-            body: options.body === undefined ? undefined : JSON.stringify(options.body),
+            body: options.bodyText ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
         });
         if (!response.ok) {
             const failure = await responseProblem(response);

@@ -41,4 +41,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-028](0028-catalog-cart.md) | URL-scoped customer browsing, bounded device cart persistence and advisory exact-money review |
 
+| [ADR-029](0029-checkout-recovery-and-live-ui.md) | Per-user checkout/payment recovery, owner financial status and cookie SignalR durable catch-up UI |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.
