@@ -1,6 +1,6 @@
-# React frontend — shopping, checkout, payments and live updates
+# React frontend — customer and Admin workspaces
 
-Implemented pages: overview `/`, sign-in `/login`, registration `/register`, current user `/account`, Customer `/orders`, `/orders/:id`, `/checkout`, authenticated `/notifications`, public `/products` and `/products/:id`, and `/cart`. Session contract: [ADR-027](adr/0027-react-session-foundations.md); browsing/cart contract: [ADR-028](adr/0028-catalog-cart.md). Recoverable checkout/payment/notifications/realtime: [ADR-029](adr/0029-checkout-recovery-and-live-ui.md). Admin/report UI and production deployment remain later work.
+Implemented pages: overview `/`, sign-in `/login`, registration `/register`, current user `/account`, Customer `/orders`, `/orders/:id`, `/checkout`, authenticated `/notifications`, public `/products` and `/products/:id`, and `/cart`. Session contract: [ADR-027](adr/0027-react-session-foundations.md); browsing/cart contract: [ADR-028](adr/0028-catalog-cart.md). Recoverable checkout/payment/notifications/realtime: [ADR-029](adr/0029-checkout-recovery-and-live-ui.md). Admin catalog/stock/fulfillment/reports/read-only audit/email-failure UI now ship under [ADR-030](adr/0030-admin-workspace.md); see the [Admin runbook](admin-ui.md). Production deployment remains later work.
 
 ## Run locally
 
@@ -77,7 +77,7 @@ Current shopping screenshots/results are under `/tmp/orderflow-shopping/browser-
 5. Abort/block API traffic in browser tools: loading/error/retry is explicit, not a fake empty table or successful login. Missing/expired session and unavailable infrastructure are separate states.
 6. At mobile width open navigation, tab within the drawer, press Escape and confirm focus returns to its button. Forms have labels/hints/errors, skip link/route heading focus and reduced-motion behavior. Compact view is the only persisted UI preference; cart storage separately contains only IDs/quantities.
 
-Verified Chromium/loopback development scope only. Safari/Firefox, a full WCAG/screen-reader audit, production TLS/proxy/CSP/shared keys, cross-device revocation, hostile suspended-tab scheduling, load testing and deployed SPA fallback remain unverified/deferred. No analytics, remote fonts, external media, fake sales metrics or Admin/reporting mutations are added. See [implementation status](implementation-status.md) for exact execution evidence.
+Verified Chromium/loopback development scope only. Safari/Firefox, a full WCAG/screen-reader audit, production TLS/proxy/CSP/shared keys, cross-device revocation, hostile suspended-tab scheduling, load testing and deployed SPA fallback remain unverified/deferred. No analytics, remote fonts, external media, fake sales metrics are added. Admin views use the existing real API contracts under ADR-030. See [implementation status](implementation-status.md) for exact execution evidence.
 
 
 ## Browsing and cart acceptance
@@ -151,3 +151,10 @@ dotnet test OrderFlow.slnx -c Release --no-build --no-restore \
 ```
 
 Manual acceptance: perform normal checkout/payment; interrupt POST responses and reload/recover with unchanged body/header; edit cart while unresolved and inspect the explicit choice; switch A/B and return to A; use operator to resolve Pending/Succeeded or late success after Cancel/expiry; observe refund Pending/Confirmed/NeedsReview from server. Open notifications, mark read and reconnect after offline work. Inspect storage to see only minimal scoped recovery (plus intentional shared cart/UI preferences). Do not delete recovery to “fix” an uncertain response. Current evidence is Chromium/loopback; Safari/Firefox, full WCAG/screen-reader audit, production TLS/affinity/shared keys, cross-device recovery and production load are not claimed.
+
+
+## Admin acceptance
+
+Sign in as an explicitly provisioned Admin and open `/admin`. Catalog/category management, reasoned stock receipts/adjustments, order UUID/status/customer search, allowed fulfillment, UTC reports, safe paginated read-only audit and email failure/retry are implemented. Follow the [Admin runbook](admin-ui.md) for exact routes, manual acceptance and recovery behavior; [ADR-030](adr/0030-admin-workspace.md) defines scoped query keys/targeted invalidation and the 12 KiB per-user durable command journal. There are no global failed-job/outbox/refund retry APIs, arbitrary execution or forced-payment controls.
+
+The default full suite now includes **31 actual browser flows**: sixteen original session/shopping, nine checkout/live and six Admin. Focus Admin with `dotnet test tests/OrderFlow.IntegrationTests/OrderFlow.IntegrationTests.csproj -c Release --no-build --no-restore --filter 'FullyQualifiedName~CheckoutBrowserTests&DisplayName~admin_'`; use `FullyQualifiedName~Frontend` for the full frontend integration group. Current Admin artifacts are under `/tmp/orderflow-admin-ui`. Exact outcomes/limits live in implementation status.

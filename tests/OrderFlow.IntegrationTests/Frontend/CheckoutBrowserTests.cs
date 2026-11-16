@@ -19,6 +19,7 @@ using OrderFlow.Application.Common.Money;
 using OrderFlow.Application.Messaging;
 using OrderFlow.Application.Modules.Catalog;
 using OrderFlow.Application.Modules.Identity;
+using OrderFlow.Application.Modules.Emails;
 using OrderFlow.Application.Modules.Inventory;
 using OrderFlow.Application.Modules.Notifications;
 using OrderFlow.Application.Modules.Payments;
@@ -47,6 +48,12 @@ public sealed class CheckoutBrowserTests(PostgresServer server, RedisServer redi
     [InlineData("flow_cancel_notifications")]
     [InlineData("flow_realtime_reconnect")]
     [InlineData("flow_refund_review")]
+    [InlineData("admin_catalog_management")]
+    [InlineData("admin_stock_recovery")]
+    [InlineData("admin_order_lifecycle_reports")]
+    [InlineData("admin_permissions_conflicts")]
+    [InlineData("admin_email_retry")]
+    [InlineData("admin_empty_error_views")]
     public async Task Real_checkout_payment_notification_browser_flow(string scenario)
     {
         var client = Path.Combine(RepositoryRoot(), "client");
@@ -59,6 +66,7 @@ public sealed class CheckoutBrowserTests(PostgresServer server, RedisServer redi
         var nonce = Guid.NewGuid().ToString("N"); var password = "Aa1!" + Guid.NewGuid().ToString("N");
         var emailA = "checkout-a-" + Guid.NewGuid().ToString("N") + "@example.invalid";
         var emailB = "checkout-b-" + Guid.NewGuid().ToString("N") + "@example.invalid";
+        var adminEmail = "checkout-admin-" + Guid.NewGuid().ToString("N") + "@example.invalid";
         var connections = new BrowserHubConnections();
         await using var app = Api.Program.Build(["--environment", "Development"], builder =>
         {
@@ -116,6 +124,18 @@ public sealed class CheckoutBrowserTests(PostgresServer server, RedisServer redi
                 }
                 Assert.True(await app.Services.GetRequiredService<RefundProcessingIteration>().ProcessNextAsync(token));
             }
+            else if (action == "email-review")
+            {
+                await using var scope = app.Services.CreateAsyncScope();
+                var db = scope.ServiceProvider.GetRequiredService<OrderFlowDbContext>();
+                var order = await db.Orders.SingleAsync(token);
+                var recipient = await db.Users.Where(row => row.Id == order.UserId).Select(row => row.Email).SingleAsync(token);
+                var source = await db.OutboxMessages.SingleAsync(row => row.AggregateId == order.Id && row.EventType == "ordering.order-confirmed", token);
+                var delivery = EmailDelivery.Confirmation(order, source.EventId, recipient, clock.GetUtcNow());
+                delivery.Status = EmailDeliveryStatus.NeedsReview; delivery.OutcomeUncertain = true;
+                delivery.AttemptCount = 5; delivery.AttemptsInCycle = 5; delivery.LastErrorCode = "controlled_failure"; delivery.LastFailureAt = clock.GetUtcNow();
+                db.EmailDeliveries.Add(delivery); await db.SaveChangesAsync(token);
+            }
             else if (action is "notify" or "notify-durable")
             {
                 // Replay committed source events through the production deduplicating consumer.
@@ -156,11 +176,14 @@ public sealed class CheckoutBrowserTests(PostgresServer server, RedisServer redi
                 var db = scope.ServiceProvider.GetRequiredService<OrderFlowDbContext>();
                 await DevelopmentSeeder.SeedRolesAsync(db, startup.Token);
                 var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-                var admin = await User("checkout-admin-" + Guid.NewGuid().ToString("N") + "@example.invalid", "Admin");
+                var admin = await User(adminEmail, "Admin");
                 await User(emailA, "Customer"); await User(emailB, "Customer");
                 var category = Category.Create("Checkout fixture", clock.GetUtcNow());
                 var product = Product.Create("CHECKOUT-" + Guid.NewGuid().ToString("N"), "Checkout fixture product", "Real browser checkout fixture.", UsdMoney.FromDecimal(12.50m), category.Id, clock.GetUtcNow());
-                db.AddRange(category, product); await db.SaveChangesAsync(startup.Token);
+                db.AddRange(category, product);
+                if (scenario == "admin_empty_error_views")
+                    for (var index = 1; index <= 21; index++) db.Add(Category.Create($"Paged category {index:00}", clock.GetUtcNow()));
+                await db.SaveChangesAsync(startup.Token);
                 var balance = await db.InventoryBalances.SingleAsync(row => row.ProductId == product.Id, startup.Token);
                 db.StockMovements.Add(balance.Change(Guid.NewGuid(), StockMovementKind.Receipt, 100, "Checkout browser receipt", admin, clock.GetUtcNow()));
                 await db.SaveChangesAsync(startup.Token); productId = product.Id;
@@ -175,8 +198,9 @@ public sealed class CheckoutBrowserTests(PostgresServer server, RedisServer redi
             var start = new ProcessStartInfo("node") { WorkingDirectory = client, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var arg in new[] { cli, "test", "--project=chromium", "--grep", scenario + "$" }) start.ArgumentList.Add(arg);
             start.Environment["ORDERFLOW_API_TARGET"] = address; start.Environment["ORDERFLOW_BROWSER_PORT"] = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            start.Environment["ORDERFLOW_BROWSER_OUTPUT"] = Path.Combine(Path.GetTempPath(), "orderflow-checkout-ui", "browser-artifacts", scenario);
+            start.Environment["ORDERFLOW_BROWSER_OUTPUT"] = Path.Combine(Path.GetTempPath(), scenario.StartsWith("admin_", StringComparison.Ordinal) ? "orderflow-admin-ui" : "orderflow-checkout-ui", "browser-artifacts", scenario);
             start.Environment["ORDERFLOW_BROWSER_CUSTOMER_A"] = emailA; start.Environment["ORDERFLOW_BROWSER_CUSTOMER_B"] = emailB;
+            start.Environment["ORDERFLOW_BROWSER_ADMIN"] = adminEmail;
             start.Environment["ORDERFLOW_BROWSER_PASSWORD"] = password; start.Environment["ORDERFLOW_BROWSER_PRODUCT"] = productId.ToString("D");
             start.Environment["ORDERFLOW_CHECKOUT_CONTROL"] = nonce; start.Environment["VITE_ORDERFLOW_REALTIME"] = "true";
             using var process = Process.Start(start)!;
@@ -188,8 +212,15 @@ public sealed class CheckoutBrowserTests(PostgresServer server, RedisServer redi
             }
             finally { if (!process.HasExited) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15)); } }
             await using var verify = Database.CreateContext();
-            Assert.InRange(await verify.Orders.CountAsync(), 1, scenario == "flow_checkout_account_isolation" ? 2 : 1);
+            Assert.InRange(await verify.Orders.CountAsync(), scenario.StartsWith("admin_", StringComparison.Ordinal) ? 0 : 1, scenario == "flow_checkout_account_isolation" ? 2 : 1);
             Assert.InRange(await verify.PaymentAttempts.CountAsync(), 0, 1);
+            if (scenario == "admin_stock_recovery") Assert.Equal(1, await verify.StockMovements.CountAsync(row => row.Reason == "Recovered stock receipt"));
+            if (scenario == "admin_email_retry")
+            {
+                Assert.Equal(1, await verify.EmailDeliveryRetries.CountAsync());
+                var delivery = await verify.EmailDeliveries.SingleAsync();
+                Assert.Equal(5, delivery.AttemptCount); Assert.Equal(1, delivery.ReviewRetryCount); Assert.Equal(0, delivery.AttemptsInCycle);
+            }
         }
         finally { using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(15)); await app.StopAsync(stop.Token); }
     }

@@ -43,4 +43,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-029](0029-checkout-recovery-and-live-ui.md) | Per-user checkout/payment recovery, owner financial status and cookie SignalR durable catch-up UI |
 
+| [ADR-030](0030-admin-workspace.md) | Admin management/report/audit views, targeted invalidation and same-identity stock/email recovery |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

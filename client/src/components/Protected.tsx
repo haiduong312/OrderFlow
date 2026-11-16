@@ -3,7 +3,15 @@ import { Link, Navigate, useLocation } from 'react-router';
 import { useSession } from '../auth/context';
 import { ErrorPanel, Icon, Loading } from './ui';
 
-export function Protected({ children, customer = false }: { children: ReactNode; customer?: boolean }) {
+export function Protected({
+    children,
+    customer = false,
+    admin = false,
+}: {
+    children: ReactNode;
+    customer?: boolean;
+    admin?: boolean;
+}) {
     const { session, controller } = useSession();
     const location = useLocation();
     if (session.phase === 'restoring' || session.phase === 'changing')
@@ -27,6 +35,17 @@ export function Protected({ children, customer = false }: { children: ReactNode;
             />
         );
     // Role checks are navigation UX. The API still authorizes every request independently.
+    if (admin && !session.user.roles.includes('Admin'))
+        return (
+            <section className="state-box">
+                <Icon name="shield" size={34} />
+                <h1>Admin access required</h1>
+                <p>This view requires an Admin account. The server authorizes every API request.</p>
+                <Link className="button secondary" to="/account">
+                    My account
+                </Link>
+            </section>
+        );
     if (customer && !session.user.roles.includes('Customer'))
         return (
             <section className="state-box">

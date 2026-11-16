@@ -2232,3 +2232,215 @@ td small {
         flex-wrap: wrap;
     }
 }
+
+/* Authorized Admin workspace. Critical mutations always wait for server acknowledgement. */
+.admin-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    padding-bottom: 22px;
+    margin-bottom: 22px;
+    border-bottom: 1px solid var(--border);
+}
+.admin-nav a {
+    padding: 10px 15px;
+    font-size: 12px;
+    border-radius: 8px;
+    background: white;
+    border: 1px solid var(--border);
+}
+.admin-nav a.active {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: white;
+}
+.admin-panel,
+.admin-recovery {
+    padding: 26px;
+    margin: 22px 0;
+    min-width: 0;
+}
+.admin-panel > h2,
+.admin-recovery h2 {
+    margin-bottom: 16px;
+}
+.admin-panel > p,
+.admin-recovery > p {
+    margin: 12px 0;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+.admin-recovery {
+    border-color: #d6b880;
+    background: #fffaf0;
+}
+.admin-recovery .action-row {
+    margin: 14px 0;
+}
+.admin-form {
+    margin-top: 22px;
+    max-width: 720px;
+}
+.admin-form fieldset {
+    display: grid;
+    gap: 18px;
+}
+.admin-form .field {
+    margin-bottom: 0;
+}
+.admin-form input:not([type='checkbox']),
+.admin-form textarea,
+.admin-form select,
+.admin-filters input,
+.admin-filters select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    border: 1px solid #d9e3e7;
+    border-radius: 8px;
+    padding: 11px 13px;
+    background: #fff;
+    color: var(--navy);
+    font-size: 13px;
+}
+.admin-form textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+.admin-form label,
+.admin-filters label {
+    font-size: 12px;
+}
+.admin-form .button {
+    justify-self: start;
+}
+.admin-filters {
+    padding: 22px;
+    margin: 22px 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 18px;
+}
+.admin-filters .field {
+    flex: 1 1 190px;
+    margin-bottom: 0;
+    min-width: 0;
+}
+.admin-filters > .button {
+    align-self: center;
+    margin-top: 17px;
+}
+.admin-table-title {
+    padding: 24px 25px 8px;
+    font-size: 18px;
+}
+.admin-table-note {
+    padding: 12px 25px;
+    font-size: 12px;
+    color: var(--muted);
+}
+.admin-table {
+    width: 100%;
+}
+.table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+}
+.admin-table td {
+    max-width: 300px;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+}
+.admin-table small {
+    display: block;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 5px;
+    overflow-wrap: anywhere;
+}
+.admin-table .text-link {
+    display: inline-block;
+    font-size: 12px;
+}
+.admin-table .button.small {
+    white-space: normal;
+}
+.admin-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 18px;
+    margin: 24px 0;
+}
+.admin-metrics > div {
+    padding: 20px;
+    background: #edf4f0;
+    border-radius: 10px;
+    min-width: 0;
+}
+.admin-metrics dt {
+    font-size: 11px;
+    color: var(--muted);
+}
+.admin-metrics dd {
+    font-size: 24px;
+    font-weight: 650;
+    color: var(--teal);
+    margin-top: 12px;
+    overflow-wrap: anywhere;
+}
+.admin-category-picker {
+    background: #f7f9fa;
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: grid;
+    gap: 18px;
+}
+.admin-category-picker .pagination {
+    padding: 0;
+    flex-wrap: wrap;
+    font-size: 11px;
+}
+.danger-action {
+    margin: 20px 0;
+    color: #a84232;
+}
+@media (max-width: 700px) {
+    .admin-panel,
+    .admin-recovery {
+        padding: 20px;
+    }
+    .admin-nav {
+        gap: 6px;
+    }
+    .admin-nav a {
+        padding: 10px 12px;
+    }
+    .admin-filters {
+        padding: 20px;
+    }
+    .admin-filters .field {
+        flex-basis: 100%;
+    }
+    .admin-table td {
+        max-width: none;
+        gap: 12px;
+    }
+    .admin-table td > * {
+        min-width: 0;
+    }
+    .admin-metrics {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .admin-table-title,
+    .admin-table-note {
+        padding-inline: 20px;
+    }
+    .admin-recovery .action-row .button {
+        width: 100%;
+    }
+    .admin-category-picker .pagination > div {
+        flex-wrap: wrap;
+    }
+}

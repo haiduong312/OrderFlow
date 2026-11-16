@@ -132,6 +132,11 @@ export function Layout() {
                     <NavLink to="/notifications">
                         <Icon name="orders" /> Notifications
                     </NavLink>
+                    {user?.roles.includes('Admin') && (
+                        <NavLink to="/admin">
+                            <Icon name="shield" /> Admin workspace
+                        </NavLink>
+                    )}
                     <NavLink to="/account">
                         <Icon name="account" />
                         My account

@@ -14,6 +14,13 @@ import { Checkout } from './pages/Checkout';
 import { OrderDetail } from './pages/OrderDetail';
 import { Notifications } from './pages/Notifications';
 import { OperationsProvider } from './checkout/context';
+import { AdminLayout, AdminHome } from './admin/shared';
+import { AdminCategories, AdminProduct, AdminProducts } from './admin/Catalog';
+import { AdminStock } from './admin/Stock';
+import { AdminOrder, AdminOrders } from './admin/Orders';
+import { AdminReports } from './admin/Reports';
+import { AdminAudit } from './admin/Audit';
+import { AdminEmails } from './admin/Emails';
 
 export class AppErrorBoundary extends Component<PropsWithChildren, { failed: boolean }> {
     state = { failed: false };
@@ -43,6 +50,25 @@ export function App() {
                     <Route path="products" element={<Catalog />} />
                     <Route path="products/:id" element={<ProductDetail />} />
                     <Route path="cart" element={<Cart />} />
+                    <Route
+                        path="admin"
+                        element={
+                            <Protected admin>
+                                <AdminLayout />
+                            </Protected>
+                        }
+                    >
+                        <Route index element={<AdminHome />} />
+                        <Route path="products" element={<AdminProducts />} />
+                        <Route path="products/:id" element={<AdminProduct />} />
+                        <Route path="products/:id/stock" element={<AdminStock />} />
+                        <Route path="categories" element={<AdminCategories />} />
+                        <Route path="orders" element={<AdminOrders />} />
+                        <Route path="orders/:id" element={<AdminOrder />} />
+                        <Route path="reports" element={<AdminReports />} />
+                        <Route path="audit" element={<AdminAudit />} />
+                        <Route path="emails" element={<AdminEmails />} />
+                    </Route>
                     <Route
                         path="checkout"
                         element={
