@@ -301,3 +301,8 @@ Both keys have a 30-second absolute lifetime anchored before the source read, bo
 ## Direct Admin reporting — milestone 24 backend
 
 [ADR-026](adr/0026-direct-admin-reporting.md) defines the direct read-only reporting replacement for the former reporting event projection. [Reporting runbook](reporting.md) defines all nine routes, financial date semantics, safe audit fields, UTC versus UI local dates and query-plan evidence. PaidSales uses immutable winning order-item totals; all recorded captures and succeeded-refund cash movements are distinct measures, and signed NetRevenue may be negative for a refund-only period. No report UI, historical status/stock reconstruction or event platform is added.
+
+
+## Implemented React session foundation
+
+[ADR-027](adr/0027-react-session-foundations.md) / [frontend runbook](frontend.md) define the shipped milestone-05 and auth/session slice of 20: stable React/TypeScript/Vite tooling, same-origin proxy, typed ProblemDetails/cookie/CSRF fetch, stable user-scoped query cache, pre-identity-change private purge/fences, UI-only density persistence and accessible responsive login/register/logout/current-user routes. A real read-only Customer orders list provides private data for scope/isolation acceptance without implementing checkout. No fake success API, persisted auth/role state or frontend business authority is added. Browser auth/proxy/cache/navigation acceptance is now tested; full business UI/deployment acceptance remains later.

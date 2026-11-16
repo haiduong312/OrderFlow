@@ -125,3 +125,8 @@ Use DevTools on the same origin: GET antiforgery with `fetch('/api/auth/antiforg
 Verify dev-cookie names only for explicit HTTP mode; HTTPS defaults must show Secure/HttpOnly/SameSite flags. In Production the HTTP opt-in must fail startup, development account seed must refuse, and /openapi/v1.json must stay 404. Test-only role probes are never available in the normal host. Integration tests additionally prove database role membership and concurrency; browser DevTools alone cannot establish those invariants.
 
 Milestone 06 adds reusable CustomerOwnership/AdminOnly policies, ICurrentUser and explicit resource denial handling; see [resource authorization](authorization.md). Existing role policy names, cookie/CSRF endpoints and rate limits are retained. Actual Order routes remain future work.
+
+
+## React client integration
+
+The browser client now implements these real routes under [ADR-027](adr/0027-react-session-foundations.md): see [frontend runbook](frontend.md) for supported Node/Vite setup, same-origin proxy, session restore, CSRF renewal and current-user scoped cache lifetime. Registration never signs in. Login/logout clear private client state before identity changes and re-read /me; request tokens live only in memory and are refreshed after cookie changes. No JWT, CORS relaxation or browser-persisted auth data. The existing backend cookie/CSRF/rate-limit/ownership contracts remain unchanged. Test-only clock control is compiled/mapped by the browser test harness only and is absent from normal API routes.

@@ -31,6 +31,9 @@ internal sealed class RealtimeApiHost : IAsyncDisposable
                 ["ConnectionStrings:OrderFlow"] = db.ConnectionString, ["Urls"] = "http://127.0.0.1:0",
                 ["Authentication:AllowInsecureHttp"] = "true", ["Realtime:Enabled"] = "true", ["Realtime:DispatchEnabled"] = dispatch.ToString(),
                 ["Realtime:RedisConnectionString"] = redis, ["Realtime:RedisPrefix"] = prefix, ["Realtime:InstanceName"] = name,
+                // Referenced hosts share appsettings output names; the simulator's Warning default
+                // must not filter this test's deterministic post-ACK Information signal.
+                ["Logging:LogLevel:OrderFlow.Api.Realtime.RealtimeDeliveryHandler"] = "Information",
                 ["RabbitMq:HostName"] = broker.HostName, ["RabbitMq:Port"] = broker.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["RabbitMq:VirtualHost"] = broker.VirtualHost, ["RabbitMq:UserName"] = broker.UserName, ["RabbitMq:Password"] = broker.Password,
                 ["RabbitMq:Prefix"] = broker.Prefix, ["RabbitMq:RetryDelayMilliseconds"] = "200"

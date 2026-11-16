@@ -33,3 +33,8 @@ Thumbs.db
 # Future client output.
 node_modules/
 dist/
+
+# Frontend verification output.
+client/test-results/
+client/playwright-report/
+*.tsbuildinfo

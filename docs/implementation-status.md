@@ -1,6 +1,6 @@
 # OrderFlow implementation status
 
-Updated: 2026-11-13 (Asia/Ho_Chi_Minh). Current milestone: **24 backend — direct Admin reporting and read-only audit**. Implements distinct paid sales/recorded captures/succeeded refunds/net, UTC ranges, current status counts, top products, actionable low stock and bounded safe audit. ADR-026 replaces the planned reporting event projection with direct PostgreSQL snapshots. Report UI and existing frontend/proxy/shared-key/runtime-role deployment remain deferred; previous caching/realtime work is preserved. See the final milestone section for exact checks and limitations.
+Updated: 2026-11-13 (Asia/Ho_Chi_Minh). Current milestone: **05 frontend foundations + requested auth/session slice of 20**. React/TypeScript workspace, same-origin Vite proxy, typed cookie/CSRF client, stable scoped TanStack Query cache, UI-only Zustand persistence and real browser auth/navigation flows are implemented under ADR-027. Read-only Customer orders demonstrate private scope/isolation; catalog/cart/checkout/Admin/report/notification UI and production proxy remain deferred. Prior backend/reporting/cache work is preserved; see final milestone section for checks and limitations.
 
 ## Milestone 01 repository inspection (historical)
 
@@ -33,7 +33,7 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 02 | Scaffold API/Application/Worker and test projects; pin supported SDK/NuGet/tools; build | 01 | A01 | Complete: .NET composition portion |
 | 03 | PostgreSQL/Identity storage, reliability schema, initial migration, Compose and actual database tests | 02, 02a | A01, A16 | Complete: persistence foundations |
 | 04 | Customer browser auth endpoints/cookies, required CSRF and safe Admin bootstrap using existing Identity storage | 03 | A02 | Complete: auth foundation; ownership features remain later |
-| 05 | React/TypeScript skeleton; pinned client tooling, TanStack Query/Zustand, dev same-origin proxy | 02, 02a | A01 | Pending |
+| 05 | React/TypeScript workspace; pinned Vite/Node tooling, scoped TanStack Query, UI-only Zustand and same-origin dev proxy | 02, 02a, 04 auth | A01, A02 current slice | Complete for frontend foundations under ADR-027; production proxy/deployment remain 25/26 |
 | 06 | Authorization/ownership contracts/policies/handlers, denial mapping and focused CSRF/auth/resource tests | 04 | A02 | Complete: representative-resource foundations; real Order integration remains 13/19 |
 | 07 | Products/Categories domain/schema, Admin create/update/archive, public read/search/paging, exact prices and concurrency | 03, 06 | A03 | Complete: Catalog slice; Order snapshots/totals remain 11/12 |
 | 08 | Inventory balances/append-only movements, zero initialization/backfill, Admin receipts/adjustments/replay and stock races | 07 | A04, A16 | Complete: stock foundation; reservations deferred to 09 |
@@ -49,14 +49,14 @@ This is the initial roadmap established here, not an externally supplied milesto
 | 17 | Signed callback receipt/inbox, verification, duplicate/quarantine handling and replay tests | 16 | A13, A14 | Complete: signed bounded receipt, exact-byte identity/deduplication, durable inbox and quarantine; see ADR-019 |
 | 18 | Atomic capture confirmation/stock consumption; late capture compensation/refund reconciliation and races | 17 | A07–A13, A16, A17, A19, A23 | Complete for requested late-capture recovery: shared allocation/consumption, full-compensation delivery/lookup, bounded review and provider-dependent recovery; operator replay/real-provider hardening remain future |
 | 19 | Admin fulfillment state machine, expected versions, order inspection and authorization | 13; verified payment integration 18 | A02, A15 | Requested list/detail/graph/expectedVersion APIs delivered in 13; verified payment-confirmed end-to-end integration remains 18/19 |
-| 20 | Browser session/CSRF flow, active catalog, cart and exact cents state | 05, 06, 07 | A03, A20 | Pending |
-| 21 | Checkout UI, pending key/body recovery, authoritative order/deadline/payment/cancel views | 18, 20 | A03, A20 | Pending |
+| 20 | Browser session/CSRF flow, active catalog, cart and exact cents state | 05, 06, 07 | A03, A20 | Session/CSRF/current-user UI and exact cents helpers delivered with 05/ADR-027; catalog/cart remain pending |
+| 21 | Checkout UI, pending key/body recovery, authoritative order/deadline/payment/cancel views | 18, 20 | A03, A20 | Read-only scoped order-list prerequisite delivered with ADR-027; checkout/detail/actions/recovery UI remain pending |
 | 22 | Admin catalog/stock/order/fulfillment UI with state/version conflict handling | 09, 19, 20 | A20 | Pending |
 | 23 | Deduplicated local notifications consumer, durable deliveries and failure visibility | 14, 18 | A17, A18, A21 | Complete for notification/email/realtime backend slices: durable consumers/owner APIs, leased local SMTP/admin recovery and API SignalR/Redis hints; frontend integration remains a later 23 slice, production mail/proxy/general replay later |
 | 24 | Direct bounded Admin reports/audit, explicit financial semantics, UTC/money/auth/snapshot tests and measured read indexes; report UI later | 08a, 18, 19 backend | A02, A03, A16 read, A21, A23 | Backend complete under ADR-026; no reporting event projection/consumer; report UI remains pending on 20 |
 | 25 | Reproducible API/client/worker/proxy local composition, migration command, runtime DB roles and readiness | 22, 24 | A01, A16, A22 | Pending |
 | 26 | Deployment hardening/shared protected Data Protection keys; SignalR proxy affinity/Upgrade/trusted forwarded headers; multi-worker/crash/uncertain commit/stale lease fault suite; retry/no-network-in-transaction evidence | 04, 18, 23, 24, 25 | A02, A12, A17–A19, A22, A23 | Pending |
-| 27 | Browser acceptance flows; cross-user/CSRF/auth regressions; structured redaction/config checks | 21, 22, 25, 26 | A02, A20, A22 | Pending |
+| 27 | Browser acceptance flows; cross-user/CSRF/auth regressions; structured redaction/config checks | 21, 22, 25, 26 | A02, A20, A22 | Auth/session/proxy/basic responsive flows covered with ADR-027; full business/deployment acceptance remains pending |
 | 28 | Operational backlog/failure view, health/lag metrics, audited same-identity operator replay and recovery runbook | 25, 26, 27 | A19, A22 | Pending |
 | 29 | Full acceptance walkthrough; portfolio architecture/demo/interview guide and verified limitations | 28 | A01–A24 | Pending |
 
@@ -1492,3 +1492,79 @@ Ordinary CREATE INDEX adds write/storage cost and can block writers during migra
 3. **Vì sao dùng direct query + Repeatable Read thay projection?** Hiểu quy mô view nhỏ không cần consumer/inbox/checkpoint; DB group/projection/index đã đo đủ dùng. Snapshot giữ count/page nhất quán, riêng từng request vẫn có thể thấy commit khác nhau.
 
 Suggested commit title (none supplied): `feat(reporting): add admin sales reports and read-only audit`.
+
+
+## Milestone 05 + requested auth/session foundation — 2026-11-13
+
+### Inspection, scope and decisions
+
+Read AGENTS.md, spec/architecture/status/ADRs and actual Identity/antiforgery/ProblemDetails/order contracts; inspected clean Git status, no existing client/manifests/CI, supported Node/npm/SDK/package pins, current migrations and PostgreSQL harness before edits. Existing backend auth, rate limits, cookies, global CSRF, roles and owner constraints remain unchanged. No backend production source/migration/package/lockfile modification. No subagents, commit/push/deployment/history rewrite or developer-data reset.
+
+Implement React/Vite milestone 05 plus the requested session/CSRF part of 20; pull only a read-only Customer orders page from 21 to make private cache scope observable with real data. No catalog/cart/checkout/payment/Admin/report/notification UI. [ADR-027](adr/0027-react-session-foundations.md) records this scope and cache/security contract. Sites local-only guidance was used for design/preview; user instructions prohibit publication. No Site registration, source synchronization or hosting/deployment tool was used.
+
+Pinned **Node 24.19.0/npm 11.17.0**, React/DOM **19.3.1**, TypeScript **7.0.2**, Vite **8.3.8**, React plugin **6.3.0**, Router **8.5.1**, TanStack Query **5.107.1**, Zustand **5.1.0**. Stable npm metadata/peer engines checked; no preview package. Vitest **5.1.0**, Playwright **1.65.0**, Prettier **3.10.1** are dev tools; exact type packages/graph in client/package.json + lockfile. Core .NET SDK/packages/migrations unchanged.
+
+### Completed acceptance
+
+| Requirement | Behavior / evidence |
+| --- | --- |
+| Readable responsive app | Overview/login/register/current-user/read-only orders, real loading/empty/error/retry/404/role-denied states, sidebar/mobile drawer, labels/hints/server field messages, skip link, focus trap/Escape/return focus and reduced motion |
+| Same-origin API | Relative /api paths + Vite dev proxy, Identity HttpOnly cookies, no CORS/JWT/cookie-domain bypass; real Chromium requests through proxy into Kestrel/PostgreSQL |
+| Typed fetch / errors | HTTP status checked first, ProblemDetails code/trace/errors retained, header trace fallback for malformed/non-JSON failures, real 204 accepted, abort propagated, redirects/unexpected success JSON refused |
+| Money | DTO strings, exact bigint cents, explicit scale/range validation/formatting; no Number totals/client payment authority |
+| CSRF identity lifecycle | In-memory token retrieval/header, dedup + generation fence, refresh after login/logout cookie changes; registration never becomes login; rejected POST is not automatically replayed; next explicit attempt retrieves fresh token |
+| Stable server cache | One QueryClient; factories/queryOptions include every order page/pageSize/status and current UserId; private unknown-identity bootstrap key isolated in SessionController; no persisted query cache |
+| Logout / switch isolation | Hide/cancel/remove private data before request; scope/generation fences ignore old data and old 401s; failed logout re-verifies surviving cookie rather than false success; owner IDs checked before caching |
+| Cross-tab / restore | Opaque BroadcastChannel signals, hidden/pagehide purge and focus/persisted-page revalidation; actual two-tab switch/logout checked; backend still authorizes all requests |
+| Zustand scope | Versioned density only persisted, mobile drawer not persisted, unknown fields discarded; no auth/user/role/token/order/price data. Crafted Admin role does not bypass server 403 |
+| Browser acceptance | Actual registration/server validation, cookie restore/missing/expired session, CSRF rejection/fresh retry, same-SPA account switch/logout, two tabs, unavailable restore, deterministic loading/empty/transport error/retry, keyboard and 320/375/768/1440px navigation |
+
+### Luồng chính (tiếng Việt)
+
+Vite phục vụ React và chuyển /api sang backend trên cùng origin mà browser nhìn thấy. Fetch client gửi cookie HttpOnly tự động, kiểm tra status trước khi đọc dữ liệu và giữ ProblemDetails code/traceId/errors. Lệnh thay đổi dữ liệu lấy request token CSRF trong RAM rồi gửi đúng header; không tự replay POST khi CSRF lỗi. Registration tạo Customer nhưng không đăng nhập; chỉ /me xác nhận cookie hiện tại.
+
+SessionController điều phối trạng thái restoring/changing/anonymous/authenticated/unavailable. Trước login đổi tài khoản/logout, nó ẩn nội dung bảo vệ, tăng generation, cancel và xóa private cache. Request cũ trả về sau đó, kể cả 401, không được làm bẩn hoặc đăng xuất nhầm tài khoản mới. Chỉ 401 của scope hiện tại mới kết thúc session trên UI; lỗi mạng/500 là unavailable, không giả thành guest hoặc bảng rỗng. Query orders có key chứa UserId và tất cả filter/page; backend vẫn lọc owner và quyết định quyền.
+
+Zustand chỉ giữ UI density/mobile menu; localStorage chỉ có density đã whitelist. Không lưu role, user, password, auth/CSRF token hay query data. Hai tab trao tín hiệu đổi identity không chứa dữ liệu riêng; khi ẩn/quay lại trang thì private state được xóa/xác minh lại. UI role chỉ là điều hướng, không phải quyền. Money là chuỗi; format/tính exact cents bằng bigint, totals vẫn lấy từ server.
+
+### Important files / migration
+
+- client/package.json, package-lock.json, .nvmrc, tsconfig.json, vite.config.ts: reproducible supported tooling and same-origin dev proxy.
+- client/src/api/client.ts, types.ts, money.ts, queries.ts: typed status/error/CSRF transport, exact money and scoped queryOptions/key factories.
+- client/src/auth/session.ts, context.tsx, returnTo.ts: verified-cookie session/privacy lifecycle and safe return routes.
+- client/src/state/preferences.ts: whitelisted UI persistence; App/main/components/pages/styles: responsive real-data interface.
+- client/tests and e2e/session.spec.ts: transport/session race rules plus real browser acceptance; playwright config disables credential-bearing traces/video.
+- IntegrationTests/Frontend/FrontendBrowserTests.cs: isolated real Kestrel/DB/Node/Vite/Chromium harness, generated identities, test-only nonce clock control; BrowserControlAbsenceTests.cs proves that control is absent from normal API. Existing RealtimeApiHost.cs gets one test-only category log-level override so its post-ACK observation is independent of referenced appsettings output collisions; no production realtime change.
+- [Frontend runbook](frontend.md), [ADR-027](adr/0027-react-session-foundations.md), architecture/spec/status/testing/authentication/README and ADR index. **No new database migration**, backend production source or .NET dependency changes.
+
+### Exact checks and results
+
+Tooling: existing Node 24.19.0/npm 11.17.0; DOTNET_CLI_HOME=/tmp/orderflow-frontend/dotnet-home, DOTNET_CLI_TELEMETRY_OPTOUT=1 for .NET. Core SDK 10.0.115/runtime 10.0.15/package pins unchanged. Browser/test artifacts under /tmp/orderflow-frontend; npm output ignored under client/node_modules/dist. Test identities/passwords/control nonce are generated per case and passed through child process environment, never command arguments/source/logs. No real credentials, developer migration/reset or deployment.
+
+1. Checked stable official npm versions and peer engines before install. Sites local-only installer installed pinned packages; added pinned dev-only Prettier for readable source. Final `npm ci` in client — **exit 0**, **56 packages added / 57 audited, 0 vulnerabilities**. Package/lock inputs are reproducible; no suppressed audit result.
+2. `npm --prefix client run build` — **exit 0**, TypeScript strict check + Vite production build. Final observed build **157 modules**, JS **327.40 kB / 102.10 kB gzip**, CSS **19.52 kB / 5.28 kB gzip**, ~230ms Vite stage; this is a local build artifact size/time, not a production performance claim. Initial TypeScript checks exposed a discriminated-union narrowing and unknown test-error type; corrected both before final checks.
+3. `npm --prefix client run test` — **exit 0**, final **35 Vitest cases passed**, ~145ms. Includes status/ProblemDetails/trace/fields/non-JSON/204, fresh CSRF retry/generation fencing, no cross-origin cookie paths, exact bigint cents/overflow, all query-key params/scope, safe route return, pre-login private purge, ignored-abort old data, stale 401, failed logout, unavailable restore and registration not becoming session.
+4. `npm --prefix client run format:check` — **exit 0**, all matched TS/TSX/CSS/JSON/HTML formatted. No unrelated linter/package/framework added. A pinned formatter keeps source readable rather than leaving generated/minified JSX/CSS in source.
+5. `dotnet restore OrderFlow.slnx --locked-mode --artifacts-path /tmp/orderflow-frontend/artifacts -m:1` — **exit 0**, six projects restored with unchanged locks. `dotnet build OrderFlow.slnx -c Release --no-restore --artifacts-path /tmp/orderflow-frontend/artifacts -m:1` — **exit 0**, final **0 warnings/errors**, **5.37s**. No production .NET model/package/source change.
+6. `npm --prefix client exec playwright install chromium` — **exit 0**, matching Playwright Chromium/headless shell **v1254 / Chrome for Testing 158.0.8127.18** installed; actual browser execution succeeded, not inferred from installation.
+7. Initial `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-frontend/artifacts -m:1 --filter 'FullyQualifiedName~FrontendBrowserTests|FullyQualifiedName~BrowserControlAbsenceTests' --logger 'trx;LogFilePrefix=frontend-browser-initial' --results-directory /tmp/orderflow-frontend/results` — **9 passed / 1 responsive failure**. Fixed resize checking to wait for actual measured reflow, then fixed Escape return focus to wait until React removed workspace inert. Focused mobile run then **1 passed**, with no arbitrary sleep. Browser proof now checks 320/375/768/1440 widths and drawer focus/keyboard behavior.
+8. Expanded auth/browser command with filter `FullyQualifiedName~FrontendBrowserTests|FullyQualifiedName~BrowserControlAbsenceTests|FullyQualifiedName~AuthenticationTests|FullyQualifiedName~AuthCompositionTests`, prefix **frontend-browser-final** — **28 passed, 0 failed/skipped**, **38s**. Includes all nine actual browser scenarios plus control absence and existing auth regressions. Added error-generation fencing after review; latest browser/combined verification is recorded below.
+9. Full command `dotnet test OrderFlow.slnx -c Release --no-build --no-restore --artifacts-path /tmp/orderflow-frontend/artifacts -m:1 --logger 'trx;LogFilePrefix=frontend-full' --results-directory /tmp/orderflow-frontend/results` — initially **454 integration passed / 1 failed**, plus **178 unit passed**, no skips; integration **5m51s**. All frontend cases passed. The old realtime test received client hints but timed out waiting for safe post-ACK Information event 2403. Isolated recheck reproduced it. Inspected fresh integration output: Simulator appsettings (Default=Warning) had won the shared appsettings copy; earlier reporting artifacts had API appsettings (Default=Information). Added one explicit test-host category level for RealtimeDeliveryHandler so the existing deterministic observation is not filtered. Did not loosen assertions, extend waits or alter realtime production logic.
+10. Local preview: owned API/Vite on loopback 5080/5173, HTTP health/anonymous /me through the actual proxy, preview document **200**. Native open-in-Codex returned queued for this chat; also queued the durable screenshot. Visually inspected real desktop overview/account and mobile login screenshots. Owned preview services were stopped cleanly after QA; no developer data was queried/seeded/migrated by preview. Test screenshots remain under `/tmp/orderflow-frontend/browser-artifacts`; traces/video are disabled.
+11. After the test-host log fix and final heading-focus improvement, reran build/test/format checks successfully, then the combined filter `FullyQualifiedName~FrontendBrowserTests|FullyQualifiedName~BrowserControlAbsenceTests|FullyQualifiedName~Two_API_instances_Rabbit_on_A_reaches_owner_connections_on_B_through_real_Redis_with_minimal_duplicate_hints`, prefix **frontend-fixed** — **11 passed, 0 failed/skipped**. TRX `frontend-fixed_net10.0_20261113170636.trx`; the unit project correctly matched zero tests. The actual two-node RabbitMQ/Redis test retains its existing post-ACK assertion.
+12. Final full suite — command from (9), prefix **frontend-verified**, with the stated DOTNET_CLI_HOME/telemetry environment — **exit 0**, **455 integration + 178 unit = 633 passed, 0 failed/skipped**; integration **5m9s**, unit **57ms**. TRX `frontend-verified_net10.0_20261113171527.trx` and `frontend-verified_net10.0_20261113171528.trx` under `/tmp/orderflow-frontend/results`. An initial sandbox-only launch aborted before executing tests because VSTest could not open its localhost socket (Permission denied); the approved run with local socket/container access produced these passing results. No production/test source changed after this full passing run; only documentation was finalized.
+13. `git diff --check` — **exit 0**. Final static text check covers **43 changed/new files**, valid JSON, balanced Markdown fences, conflict markers and **324 existing relative Markdown links**; no issue. README now reflects the existing actual SDK pin and new browser prerequisites instead of its stale pre-frontend instructions. New frontend packages/lock are explicit; .NET packages/model/migrations remain unchanged. No commit, push, deployment or developer DB migration/reset.
+
+### Manual verification / trade-offs / remaining work
+
+Follow [frontend runbook](frontend.md): privately configure/migrate DB and seed roles using existing explicit commands; start API on loopback 5080 with the existing Development-only HTTP opt-in, npm ci + npm run dev in client, then open the printed URL. Register, sign in, reload Account, view real Orders, switch using SPA navigation, sign out/Back, repeat across tabs, and try failed/expired CSRF/auth/network cases. Look at storage (density only) and HttpOnly cookies. Backend remains authoritative; no fake successful API responses or default login credentials.
+
+Readonly orders are a cache-isolation prerequisite, not completed checkout UI. Current order data can be stale until normal refetch; it never authorizes inventory/payment actions. Individual frames in a suspended/unresponsive tab cannot be erased instantly by another tab; supported app transitions signal/purge/revalidate, and the server validates every request. External/manual cookie changes are detected on focus/restore, active-scope 401 or response owner mismatch. No continuous cross-device revocation, Safari/Firefox/full WCAG audit, production TLS/proxy/CSP/shared keys/SPA fallback, load benchmark, catalog/cart/checkout/Admin/report/notification UI or Site deployment is claimed.
+
+### Three interview questions
+
+1. **Vì sao HttpOnly cookie vẫn cần CSRF và phải đổi token sau login/logout?** Hiểu cookie được browser gửi tự động, request token gắn danh tính hiện tại; registration không tự đăng nhập và token cũ không được dùng cho tài khoản mới.
+2. **Vì sao key có UserId vẫn phải cancel/xóa/fence?** Hiểu private data cũ không được hiện trong lúc đổi identity; AbortSignal không đủ nếu response muộn vẫn về, kể cả 401. Backend owner SQL mới là security boundary.
+3. **TanStack Query khác Zustand ở đâu?** Query giữ server state có scope/lifetime, Zustand chỉ UI preference. Không persist role/auth/query data; money giữ string/bigint cents và tổng tiền thuộc backend.
+
+Suggested commit title (none supplied): `feat(client): add React session UI and scoped query caching`.

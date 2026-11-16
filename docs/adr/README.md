@@ -37,4 +37,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-026](0026-direct-admin-reporting.md) | Direct Admin report snapshots, distinct paid/captured/refunded/net semantics and bounded read-only audit |
 
+| [ADR-027](0027-react-session-foundations.md) | React session UX, typed cookie/CSRF fetch, scoped query lifecycle and UI-only persistence |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.
