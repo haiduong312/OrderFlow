@@ -1,6 +1,6 @@
 # OrderFlow
 
-A portfolio modular monolith for ASP.NET Core / full-stack development. Current delivery adds a reproducible local HTTPS deployment profile: built React/nginx frontend, two APIs with encrypted shared cookie keys, two workers, PostgreSQL, RabbitMQ and Redis. Explicit migration and optional simulator/mail/telemetry profiles preserve durable work and same-origin browser routing. See [deployment and replica verification](docs/deployment.md), [observability](docs/observability.md), [Admin runbook](docs/admin-ui.md), [frontend setup](docs/frontend.md) and [implementation status](docs/implementation-status.md).
+A portfolio modular monolith for ASP.NET Core / full-stack development. Current delivery adds GitHub Actions gates for locked restore/build, unit and PostgreSQL/delivery integration tests, frontend typecheck/build,32 serialized real browser flows and build-only container validation. Failure artifacts omit raw credentials/headers and include only safe summaries and masked screenshots. See [CI and clean-checkout reproduction](docs/ci.md), [deployment and replica verification](docs/deployment.md), [frontend setup](docs/frontend.md) and [implementation status](docs/implementation-status.md). Workflow execution on GitHub remains separate from locally executed checks; no push or deployment is performed here.
 
 Read the [project contract](docs/project-spec.md), [architecture](docs/architecture.md), [ADRs](docs/adr/README.md), and [implementation status](docs/implementation-status.md) before adding features. Repository working rules are in [AGENTS.md](AGENTS.md).
 
@@ -28,6 +28,8 @@ dotnet test OrderFlow.slnx --configuration Release --no-build --no-restore
 ```
 
 The solution contains six projects (three production core, one optional Development/Testing simulator, two tests). Tests cover domain/HTTP/security and actual PostgreSQL concurrency, plus a dedicated real RabbitMQ collection for routing/confirms, uncertainty, restart, lease fencing and finite dead lettering. Tests own fresh databases/containers and never migrate/reset the developer database. Missing prerequisites fail visibly. For the external-service-free subset use `--filter 'Category!=PostgreSQL&Category!=RabbitMQ'`. See [testing](docs/testing.md) for setup and [implementation status](docs/implementation-status.md) for exact current counts/results.
+
+The same CI gates run locally through `bash infra/ci/build-backend.sh`, `bash infra/ci/test-backend.sh unit`, `integration`, `browser`, and `bash infra/ci/test-frontend.sh`; see the [prerequisites/order/artifact policy](docs/ci.md). CI explicitly uses the repository's published container SDK10.0.404 in its disposable checkout; the committed Ubuntu development pin remains10.0.115. Only the existing client Prettier policy is gated. Images are built locally without registry push or deployment.
 
 Build outputs go to ignored `artifacts/`, separated by project/configuration. To keep even local generated output outside the repository, pass the same `--artifacts-path /tmp/orderflow-artifacts` to restore/build/test/run (choose a writable equivalent on Windows). Use the same configuration/output path across commands; `--no-build` must refer to previously built output.
 

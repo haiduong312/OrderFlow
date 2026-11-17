@@ -15,7 +15,7 @@ export default defineConfig({
         viewport: { width: 1440, height: 1000 },
         trace: 'off',
         video: 'off',
-        screenshot: 'only-on-failure',
+        screenshot: process.env.ORDERFLOW_SAFE_FAILURE_ARTIFACTS === '1' ? 'off' : 'only-on-failure',
         reducedMotion: 'reduce',
     },
     projects: [

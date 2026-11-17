@@ -40,6 +40,7 @@ public sealed class CheckoutBrowserTests(PostgresServer server, RedisServer redi
 {
     [Theory]
     [InlineData("flow_happy_payment")]
+    [InlineData("flow_registered_purchase")]
     [InlineData("flow_lost_create")]
     [InlineData("flow_checkout_account_isolation")]
     [InlineData("flow_payment_timeout")]
@@ -198,7 +199,8 @@ public sealed class CheckoutBrowserTests(PostgresServer server, RedisServer redi
             var start = new ProcessStartInfo("node") { WorkingDirectory = client, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var arg in new[] { cli, "test", "--project=chromium", "--grep", scenario + "$" }) start.ArgumentList.Add(arg);
             start.Environment["ORDERFLOW_API_TARGET"] = address; start.Environment["ORDERFLOW_BROWSER_PORT"] = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            start.Environment["ORDERFLOW_BROWSER_OUTPUT"] = Path.Combine(Path.GetTempPath(), scenario.StartsWith("admin_", StringComparison.Ordinal) ? "orderflow-admin-ui" : "orderflow-checkout-ui", "browser-artifacts", scenario);
+            start.Environment["ORDERFLOW_BROWSER_OUTPUT"] = Path.Combine(Environment.GetEnvironmentVariable("ORDERFLOW_CI_BROWSER_ARTIFACTS")
+                ?? Path.Combine(Path.GetTempPath(), scenario.StartsWith("admin_", StringComparison.Ordinal) ? "orderflow-admin-ui" : "orderflow-checkout-ui", "browser-artifacts"), scenario);
             start.Environment["ORDERFLOW_BROWSER_CUSTOMER_A"] = emailA; start.Environment["ORDERFLOW_BROWSER_CUSTOMER_B"] = emailB;
             start.Environment["ORDERFLOW_BROWSER_ADMIN"] = adminEmail;
             start.Environment["ORDERFLOW_BROWSER_PASSWORD"] = password; start.Environment["ORDERFLOW_BROWSER_PRODUCT"] = productId.ToString("D");

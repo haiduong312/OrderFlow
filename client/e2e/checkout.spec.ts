@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
 import type { CreatedOrder } from '../src/api/types';
 function required(name: string) {
@@ -71,6 +71,35 @@ test('flow_happy_payment', async ({ page }) => {
             .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
             .toBeLessThanOrEqual(width);
     }
+});
+
+test('flow_registered_purchase', async ({ page }) => {
+    const email = `registered-${crypto.randomUUID()}@example.invalid`;
+    await page.goto('/register');
+    await page.getByLabel('Email address', { exact: true }).fill(email);
+    await page.getByLabel('Password', { exact: true }).fill(required('ORDERFLOW_BROWSER_PASSWORD'));
+    await page.getByRole('button', { name: 'Create account', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Your account is ready.' })).toBeVisible();
+    expect((await page.request.get('/api/auth/me')).status()).toBe(401);
+    await page.getByRole('link', { name: 'Continue to sign in' }).click();
+    await page.getByLabel('Email address', { exact: true }).fill(email);
+    await page.getByLabel('Password', { exact: true }).fill(required('ORDERFLOW_BROWSER_PASSWORD'));
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page.locator('.account-person h2')).toHaveText(email);
+    await page.reload();
+    await expect(page.locator('.account-person h2')).toHaveText(email);
+    const id = await create(page);
+    await startPayment(page);
+    await expect(page.getByTestId('live-state')).toHaveText('Live updates connected');
+    await control(page, 'submit');
+    await control(page, 'capture');
+    await control(page, 'notify');
+    await expect(page.getByTestId('order-status')).toHaveText('Confirmed');
+    const financial = await (await page.request.get(`/api/orders/${id}/payment-status`)).json();
+    expect(financial.captureCount).toBe(1);
+    expect(financial.captures[0].amount).toBe('25.00');
+    expect(financial.captures[0].allocated).toBe(true);
+    expect((await page.request.get(`/api/admin/orders/${id}`)).status()).toBe(403);
 });
 
 test('flow_lost_create', async ({ page }) => {

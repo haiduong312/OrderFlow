@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: 'true'
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select the repository's published container SDK in this disposable checkout
+        run: cp infra/deployment/global.container.json global.json
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - name: Restore locked dependencies and build
+        run: bash infra/ci/build-backend.sh
+      - name: Verify artifact privacy and failure gates
+        run: python3 -m unittest discover -s infra/ci -p 'test_*.py'
+      - name: Focused service-free unit tests
+        run: bash infra/ci/test-backend.sh unit
+      - name: PostgreSQL and delivery integration tests (disposable Testcontainers)
+        run: bash infra/ci/test-backend.sh integration
+      - name: Upload sanitized failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backend-failure-${{ github.run_attempt }}
+          path: artifacts/ci/public/
+          if-no-files-found: warn
+          retention-days: 7
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.19.0'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm install --global npm@11.17.0
+      - run: npm ci --prefix client
+      - name: Existing Prettier gate, TypeScript/Vite build and frontend tests
+        run: bash infra/ci/test-frontend.sh
+      - name: Upload sanitized failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: frontend-failure-${{ github.run_attempt }}
+          path: artifacts/ci/public/
+          if-no-files-found: warn
+          retention-days: 7
+
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: cp infra/deployment/global.container.json global.json
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.19.0'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm install --global npm@11.17.0
+      - run: npm ci --prefix client
+      - name: Install the lockfile-matched browser and Ubuntu libraries
+        working-directory: client
+        run: npx --no-install playwright install --with-deps chromium
+      - run: bash infra/ci/build-backend.sh
+      - name: Serialized real browser flows with independent fixture databases/accounts/stock
+        run: bash infra/ci/test-backend.sh browser
+      - name: Upload sanitized results and masked failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failure-${{ github.run_attempt }}
+          path: artifacts/ci/public/
+          if-no-files-found: warn
+          retention-days: 7
+
+  containers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build all custom multi-stage images; no push or deployment
+        run: |
+          set -euo pipefail
+          python3 infra/deployment/setup.py --directory .local/ci-images --project orderflow-ci-images
+          docker compose -f compose.deploy.yaml --env-file .local/ci-images/deployment.env --profile deploy --profile demo config --quiet
+          docker compose -f compose.deploy.yaml --env-file .local/ci-images/deployment.env --profile deploy --profile demo build api1 worker1 simulator proxy

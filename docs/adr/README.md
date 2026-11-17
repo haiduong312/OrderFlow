@@ -49,4 +49,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-032](0032-replicated-compose-deployment.md) | Local replicated TLS Compose, shared encrypted cookie keys, hub affinity, explicit migrations and process recovery |
 
+| [ADR-033](0033-github-actions-and-browser-ci.md) | Pinned GitHub Actions gates, disposable real dependencies, serialized browser acceptance and private failure artifacts |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

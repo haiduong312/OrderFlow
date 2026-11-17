@@ -38,3 +38,6 @@ dist/
 client/test-results/
 client/playwright-report/
 *.tsbuildinfo
+
+# Python CI report helpers.
+__pycache__/

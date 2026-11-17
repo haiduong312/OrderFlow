@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import type { APIRequestContext, BrowserContext, Page } from '@playwright/test';
 import type { Product } from '../src/api/types';
 

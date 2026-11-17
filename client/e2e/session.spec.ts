@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 function required(name: string) {

@@ -136,7 +136,8 @@ public sealed class FrontendBrowserTests(PostgresServer server, ITestOutputHelpe
             var start = new ProcessStartInfo("node") { WorkingDirectory = client, UseShellExecute = false,
                 RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var argument in new[] { cli, "test", "--project=chromium", "--grep", scenario + "$" }) start.ArgumentList.Add(argument);
-            var artifacts = Path.Combine(Path.GetTempPath(), "orderflow-shopping", "browser-artifacts", scenario);
+            var artifacts = Path.Combine(Environment.GetEnvironmentVariable("ORDERFLOW_CI_BROWSER_ARTIFACTS")
+                ?? Path.Combine(Path.GetTempPath(), "orderflow-shopping", "browser-artifacts"), scenario);
             start.Environment["ORDERFLOW_API_TARGET"] = address;
             start.Environment["ORDERFLOW_BROWSER_PORT"] = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
             start.Environment["ORDERFLOW_BROWSER_OUTPUT"] = artifacts;
