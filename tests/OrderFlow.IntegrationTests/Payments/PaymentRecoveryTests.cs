@@ -144,6 +144,7 @@ public sealed class PaymentRecoveryTests(PostgresServer server) : PostgresTest(s
             await using var independent = provider.CreateContext(); providerRefundId = (await independent.ProviderRefunds.SingleAsync()).RefundId;
             Assert.False(await RefundAsync(gateway)); // Backoff is a durable due-time predicate.
         }
+        var recovery = FailureEvidence.Start();
         clock.Advance(TimeSpan.FromSeconds(5));
         await using (var restarted = await SimulatorTestHost.StartAsync(provider, clock))
         {
@@ -151,6 +152,8 @@ public sealed class PaymentRecoveryTests(PostgresServer server) : PostgresTest(s
         }
         await AssertCompensatedAsync(provider, intention.Id);
         await using var final = Database.CreateContext(); Assert.Equal(providerRefundId, (await final.PaymentRefunds.SingleAsync()).ProviderRefundId);
+        FailureEvidence.Record(recovery, "refund-timeout-" + paymentScenario, new { logical_backoff_advance_seconds = 5,
+            provider_refunds = 1, local_succeeded_refunds = 1, original_identity_preserved = true });
     }
 
     [Fact]
@@ -204,6 +207,7 @@ public sealed class PaymentRecoveryTests(PostgresServer server) : PostgresTest(s
         var (owner, _) = await ArrangeAsync(host, simulator); using var browser = owner;
         using var gateway = simulator.Gateway(); var intention = await CreateLateRefundAsync(gateway);
         var pause = new PauseRefundResult(gateway); var old = RefundAsync(pause);
+        var recovery = FailureEvidence.Start();
         try
         {
             await pause.Reached.Task.WaitAsync(TimeSpan.FromSeconds(15)); clock.Advance(TimeSpan.FromSeconds(60));
@@ -212,6 +216,8 @@ public sealed class PaymentRecoveryTests(PostgresServer server) : PostgresTest(s
         finally { pause.Release.TrySetResult(); }
         Assert.True(await old); await AssertCompensatedAsync(provider, intention.Id);
         await using var read = Database.CreateContext(); Assert.Equal(2, (await read.PaymentRefunds.SingleAsync()).DeliveryCount);
+        FailureEvidence.Record(recovery, "two-worker-refund-lease", new { workers = 2, logical_lease_advance_seconds = 60,
+            provider_refunds = 1, delivery_count = 2, stale_owner_fenced = true });
     }
 
     [Fact]

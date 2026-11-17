@@ -51,4 +51,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-033](0033-github-actions-and-browser-ci.md) | Pinned GitHub Actions gates, disposable real dependencies, serialized browser acceptance and private failure artifacts |
 
+| [ADR-034](0034-disposable-failure-and-load-lab.md) | Bounded disposable k6/fault scenarios, predefined invariants, explicit cache conditions and honest local measurements |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

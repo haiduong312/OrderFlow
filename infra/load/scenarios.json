@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "k6_image": "grafana/k6:2.4.0@sha256:d41bb79cd8de5a7ad619b53570e3712633e8bff0937010a5c6c57a4747e7a276",
+  "limits": { "read_vus": 4, "read_iterations_per_vu": 250, "warmup_iterations_per_vu": 10, "users": 8, "stock": 4, "max_duration_seconds": 30, "recovery_budget_seconds": 60 },
+  "read_mix": { "product_detail": 0.9, "category_detail": 0.1 },
+  "criteria": {
+    "unexpected_http_responses": 0,
+    "infrastructure_errors": 0,
+    "read_p95_ceiling_ms": 2000,
+    "last_stock_created": 4,
+    "last_stock_rejected_409": 4,
+    "duplicate_201_responses": 8,
+    "duplicate_distinct_orders": 1,
+    "duplicate_response_bodies_equal": true,
+    "both_api_instances_observed": true,
+    "broker_outage_created": 8,
+    "stock_money_and_dedup_invariant_violations": 0,
+    "fault_tests_skipped": 0
+  },
+  "fault_methods": [
+    "OrderFlow.IntegrationTests.Payments.PaymentCallbackTests.Real_payment_race_with_cancellation_or_expiry_has_one_stock_effect",
+    "OrderFlow.IntegrationTests.Notifications.NotificationTests.Commit_before_ACK_fault_then_channel_restart_redelivers_without_duplicate_effects",
+    "OrderFlow.IntegrationTests.Payments.PaymentRecoveryTests.Lost_refund_response_recovers_by_lookup_after_real_provider_restart_with_same_identity",
+    "OrderFlow.IntegrationTests.Messaging.OutboxPublishingTests.Stale_owner_cannot_complete_after_reclaim_and_newer_publication",
+    "OrderFlow.IntegrationTests.Messaging.OutboxPublishingTests.Independent_workers_contend_before_claim_and_only_one_can_publish",
+    "OrderFlow.IntegrationTests.Messaging.OutboxPublishingTests.Crash_after_confirm_before_SQL_ack_reclaims_expired_lease_and_can_deliver_duplicate",
+    "OrderFlow.IntegrationTests.Payments.PaymentRecoveryTests.Expired_lease_reclaim_fences_old_worker_after_same_effect_was_already_refunded"
+  ],
+  "fault_cases_expected": 9,
+  "interpretation": "Local diagnostic ceilings, not production SLOs. HTTP percentiles for tiny write bursts are descriptive only. Fault-harness HTTP distributions/throughput are unmeasured; logical lease advance is not wall-clock recovery latency."
+}

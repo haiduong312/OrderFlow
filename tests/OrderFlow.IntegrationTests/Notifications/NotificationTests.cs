@@ -105,10 +105,13 @@ public sealed class NotificationTests(PostgresServer server, RabbitMqServer brok
             var probe = AckProbeChannel.Wrap(first, async () => { await AssertEffectsAsync(source); throw new InvalidOperationException("Injected crash before ACK"); });
             await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(delivery.Body, delivery.BasicProperties, probe, delivery.DeliveryTag, default));
         }
+        var recovery = FailureEvidence.Start();
         await using var restarted = await connection.CreateChannelAsync();
         var redelivered = await restarted.BasicGetAsync(settings.NotificationQueue, false); Assert.NotNull(redelivered); Assert.True(redelivered.Redelivered);
         await handler.HandleAsync(redelivered.Body, redelivered.BasicProperties, restarted, redelivered.DeliveryTag, default);
         await AssertEffectsAsync(source); Assert.Null(await restarted.BasicGetAsync(settings.NotificationQueue, true));
+        FailureEvidence.Record(recovery, "commit-before-ack", new { database_effects = "one inbox/notification/child outbox", redelivered = true,
+            fault_mode = "test-only ACK exception after actual DB commit, real channel restart" });
     }
 
     [Theory]

@@ -257,6 +257,7 @@ public sealed class PaymentCallbackTests(PostgresServer server) : PostgresTest(s
         using (var accepted = await SendAsync(browser, Body(Result(attempt)))) Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
         if (expire) clock.Advance(TimeSpan.FromMinutes(15));
         gate.Enabled = true;
+        var recovery = FailureEvidence.Start();
         var paymentTask = SettleAsync(gate);
         if (expire)
         {
@@ -274,6 +275,9 @@ public sealed class PaymentCallbackTests(PostgresServer server) : PostgresTest(s
         await using var read = Database.CreateContext(); var order = await read.Orders.SingleAsync();
         Assert.Contains(order.Status, expire ? new[] { OrderStatus.Expired } : new[] { OrderStatus.Confirmed, OrderStatus.Cancelled });
         await ReconcileAsync(order.Status == OrderStatus.Confirmed);
+        FailureEvidence.Record(recovery, expire ? "callback-expiry" : "callback-cancel", new { participants = gate.Participants,
+            order_status = order.Status.ToString(), logical_expiry_advance_seconds = expire ? 900 : 0,
+            invariant = "one consumption or release; capture allocated or uniquely compensated" });
     }
 
     [Fact]

@@ -1,0 +1,499 @@
+{
+  "format_version": 1,
+  "criteria": {
+    "version": 1,
+    "k6_image": "grafana/k6:2.4.0@sha256:d41bb79cd8de5a7ad619b53570e3712633e8bff0937010a5c6c57a4747e7a276",
+    "limits": {
+      "read_vus": 4,
+      "read_iterations_per_vu": 250,
+      "warmup_iterations_per_vu": 10,
+      "users": 8,
+      "stock": 4,
+      "max_duration_seconds": 30,
+      "recovery_budget_seconds": 60
+    },
+    "read_mix": {
+      "product_detail": 0.9,
+      "category_detail": 0.1
+    },
+    "criteria": {
+      "unexpected_http_responses": 0,
+      "infrastructure_errors": 0,
+      "read_p95_ceiling_ms": 2000,
+      "last_stock_created": 4,
+      "last_stock_rejected_409": 4,
+      "duplicate_201_responses": 8,
+      "duplicate_distinct_orders": 1,
+      "duplicate_response_bodies_equal": true,
+      "both_api_instances_observed": true,
+      "broker_outage_created": 8,
+      "stock_money_and_dedup_invariant_violations": 0,
+      "fault_tests_skipped": 0
+    },
+    "fault_methods": [
+      "OrderFlow.IntegrationTests.Payments.PaymentCallbackTests.Real_payment_race_with_cancellation_or_expiry_has_one_stock_effect",
+      "OrderFlow.IntegrationTests.Notifications.NotificationTests.Commit_before_ACK_fault_then_channel_restart_redelivers_without_duplicate_effects",
+      "OrderFlow.IntegrationTests.Payments.PaymentRecoveryTests.Lost_refund_response_recovers_by_lookup_after_real_provider_restart_with_same_identity",
+      "OrderFlow.IntegrationTests.Messaging.OutboxPublishingTests.Stale_owner_cannot_complete_after_reclaim_and_newer_publication",
+      "OrderFlow.IntegrationTests.Messaging.OutboxPublishingTests.Independent_workers_contend_before_claim_and_only_one_can_publish",
+      "OrderFlow.IntegrationTests.Messaging.OutboxPublishingTests.Crash_after_confirm_before_SQL_ack_reclaims_expired_lease_and_can_deliver_duplicate",
+      "OrderFlow.IntegrationTests.Payments.PaymentRecoveryTests.Expired_lease_reclaim_fences_old_worker_after_same_effect_was_already_refunded"
+    ],
+    "fault_cases_expected": 9,
+    "interpretation": "Local diagnostic ceilings, not production SLOs. HTTP percentiles for tiny write bursts are descriptive only. Fault-harness HTTP distributions/throughput are unmeasured; logical lease advance is not wall-clock recovery latency."
+  },
+  "hardware": {
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13400",
+    "logical_cpus": 16,
+    "memory_total": "16133856 kB",
+    "architecture": "x86_64",
+    "kernel": "7.0.0-43-generic",
+    "container_limits": [
+      {
+        "service": "api1",
+        "memory_bytes": 536870912,
+        "nano_cpus": 500000000,
+        "image_id": "sha256:9ab74b87b5c767aa32cda81fe7910ec72a33d34ad07dde58776ca4ddee7d520b"
+      },
+      {
+        "service": "api2",
+        "memory_bytes": 536870912,
+        "nano_cpus": 500000000,
+        "image_id": "sha256:9ab74b87b5c767aa32cda81fe7910ec72a33d34ad07dde58776ca4ddee7d520b"
+      },
+      {
+        "service": "worker1",
+        "memory_bytes": 402653184,
+        "nano_cpus": 1000000000,
+        "image_id": "sha256:9afee2c1a2ca13af4889cd7f597111b42435d5d0cadaf349a65eb7ea31645466"
+      },
+      {
+        "service": "worker2",
+        "memory_bytes": 402653184,
+        "nano_cpus": 1000000000,
+        "image_id": "sha256:9afee2c1a2ca13af4889cd7f597111b42435d5d0cadaf349a65eb7ea31645466"
+      },
+      {
+        "service": "postgres",
+        "memory_bytes": 536870912,
+        "nano_cpus": 1000000000,
+        "image_id": "sha256:5c4783a8cc3f0074912164f94dfa1be4e043438f0f707cf968d7af9a0d31a2c8"
+      },
+      {
+        "service": "rabbitmq",
+        "memory_bytes": 536870912,
+        "nano_cpus": 500000000,
+        "image_id": "sha256:af6f50d38098d8bd52fef7f3fa85015dd8b2bf6def58e995bf584ae9ba0f6407"
+      },
+      {
+        "service": "redis",
+        "memory_bytes": 134217728,
+        "nano_cpus": 250000000,
+        "image_id": "sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3"
+      },
+      {
+        "service": "proxy",
+        "memory_bytes": 134217728,
+        "nano_cpus": 250000000,
+        "image_id": "sha256:e01def13940d58af0ada65a4a9840fe349a165dc3fcb7709874516b28d9829c9"
+      }
+    ],
+    "source_revision": "a0fe3d0c470c455586da80f7ef2dd798c0a7dfba",
+    "working_tree_dirty": true,
+    "k6_limit": {
+      "cpus": 0.5,
+      "memory_bytes": 134217728
+    }
+  },
+  "scenarios": {
+    "read-cache-off": {
+      "requests": 1000,
+      "successful": 1000,
+      "expected_business_rejections": 0,
+      "errors": {
+        "unexpected_responses": 0,
+        "infrastructure_errors": 0,
+        "auth_errors": 0,
+        "validation_errors": 0,
+        "server_errors": 0,
+        "transport_errors": 0
+      },
+      "latency_ms": {
+        "med": 4.421946999999999,
+        "p(95)": 16.82086059999999,
+        "p(99)": 39.25625240999999
+      },
+      "requests_per_second": 232.61160157890188,
+      "k6_window_seconds": 4.299011714000001,
+      "runner_wall_seconds": 5.080129305002629,
+      "api_responses": {
+        "api1": 500,
+        "api2": 500
+      },
+      "sql_delta": {
+        "calls": 1997,
+        "rows": 1000,
+        "execution_ms": 56.93092800000022,
+        "catalog_calls": 1000,
+        "catalog_execution_ms": 37.832922000000096
+      },
+      "ef_sql_log_events": 1000,
+      "backlog": {
+        "pending": 0,
+        "failed": 0,
+        "oldest_age_seconds": 0
+      },
+      "invariants": {
+        "stock_violations": 0,
+        "money_violations": 0,
+        "duplicate_checkout_orders": 0,
+        "orders": 13,
+        "products": 15,
+        "users": 9
+      }
+    },
+    "read-cache-on-cold": {
+      "requests": 1,
+      "successful": 1,
+      "expected_business_rejections": 0,
+      "errors": {
+        "unexpected_responses": 0,
+        "infrastructure_errors": 0,
+        "auth_errors": 0,
+        "validation_errors": 0,
+        "server_errors": 0,
+        "transport_errors": 0
+      },
+      "latency_ms": {
+        "med": 564.704874,
+        "p(95)": 564.704874,
+        "p(99)": 564.704874
+      },
+      "requests_per_second": 1.7219368000050321,
+      "k6_window_seconds": 0.580741407,
+      "runner_wall_seconds": 1.4287417930027004,
+      "api_responses": {
+        "api1": 0,
+        "api2": 1
+      },
+      "sql_delta": {
+        "calls": 6,
+        "rows": 3,
+        "execution_ms": 0.06512099999963539,
+        "catalog_calls": 2,
+        "catalog_execution_ms": 0.01884499999999889
+      },
+      "ef_sql_log_events": 3,
+      "backlog": {
+        "pending": 0,
+        "failed": 0,
+        "oldest_age_seconds": 0
+      },
+      "invariants": {
+        "stock_violations": 0,
+        "money_violations": 0,
+        "duplicate_checkout_orders": 0,
+        "orders": 13,
+        "products": 15,
+        "users": 9
+      }
+    },
+    "read-cache-on-warm": {
+      "requests": 1000,
+      "successful": 1000,
+      "expected_business_rejections": 0,
+      "errors": {
+        "unexpected_responses": 0,
+        "infrastructure_errors": 0,
+        "auth_errors": 0,
+        "validation_errors": 0,
+        "server_errors": 0,
+        "transport_errors": 0
+      },
+      "latency_ms": {
+        "med": 5.6757255,
+        "p(95)": 69.3019384,
+        "p(99)": 89.72559627
+      },
+      "requests_per_second": 129.0030245476362,
+      "k6_window_seconds": 7.751756236,
+      "runner_wall_seconds": 8.679268741994747,
+      "api_responses": {
+        "api1": 500,
+        "api2": 500
+      },
+      "sql_delta": {
+        "calls": 1800,
+        "rows": 926,
+        "execution_ms": 46.084080999999514,
+        "catalog_calls": 0,
+        "catalog_execution_ms": 0.0
+      },
+      "ef_sql_log_events": 902,
+      "backlog": {
+        "pending": 0,
+        "failed": 0,
+        "oldest_age_seconds": 0
+      },
+      "invariants": {
+        "stock_violations": 0,
+        "money_violations": 0,
+        "duplicate_checkout_orders": 0,
+        "orders": 13,
+        "products": 15,
+        "users": 9
+      }
+    },
+    "read-cache-on-quiet": {
+      "requests": 1000,
+      "successful": 1000,
+      "expected_business_rejections": 0,
+      "errors": {
+        "unexpected_responses": 0,
+        "infrastructure_errors": 0,
+        "auth_errors": 0,
+        "validation_errors": 0,
+        "server_errors": 0,
+        "transport_errors": 0
+      },
+      "latency_ms": {
+        "med": 7.2641495,
+        "p(95)": 58.70403554999998,
+        "p(99)": 87.24911381
+      },
+      "requests_per_second": 124.86272836686453,
+      "k6_window_seconds": 8.008795043,
+      "runner_wall_seconds": 8.950657166991732,
+      "api_responses": {
+        "api1": 500,
+        "api2": 500
+      },
+      "sql_delta": {
+        "calls": 1803,
+        "rows": 926,
+        "execution_ms": 44.23131699999976,
+        "catalog_calls": 0,
+        "catalog_execution_ms": 0.0
+      },
+      "ef_sql_log_events": 0,
+      "backlog": {
+        "pending": 0,
+        "failed": 0,
+        "oldest_age_seconds": 0
+      },
+      "invariants": {
+        "stock_violations": 0,
+        "money_violations": 0,
+        "duplicate_checkout_orders": 0,
+        "orders": 13,
+        "products": 15,
+        "users": 9
+      }
+    },
+    "last-stock": {
+      "requests": 8,
+      "successful": 4,
+      "expected_business_rejections": 4,
+      "errors": {
+        "unexpected_responses": 0,
+        "infrastructure_errors": 0,
+        "auth_errors": 0,
+        "validation_errors": 0,
+        "server_errors": 0,
+        "transport_errors": 0
+      },
+      "latency_ms": {
+        "med": 1216.6029800000001,
+        "p(95)": 1289.10567885,
+        "p(99)": 1292.27210617
+      },
+      "requests_per_second": 2.4237592581169336,
+      "k6_window_seconds": 3.300657841,
+      "runner_wall_seconds": 4.047833334989264,
+      "api_responses": {
+        "api1": 4,
+        "api2": 4
+      },
+      "sql_delta": {
+        "calls": 332,
+        "rows": 132,
+        "execution_ms": 2783.4340719999996,
+        "catalog_calls": 24,
+        "catalog_execution_ms": 0.4518070000000023
+      },
+      "ef_sql_log_events": 0,
+      "backlog": {
+        "pending": 4,
+        "failed": 0,
+        "oldest_age_seconds": 1.462892
+      },
+      "invariants": {
+        "stock_violations": 0,
+        "money_violations": 0,
+        "duplicate_checkout_orders": 0,
+        "orders": 4,
+        "products": 15,
+        "users": 9
+      }
+    },
+    "duplicate": {
+      "requests": 8,
+      "successful": 8,
+      "expected_business_rejections": 0,
+      "errors": {
+        "unexpected_responses": 0,
+        "infrastructure_errors": 0,
+        "auth_errors": 0,
+        "validation_errors": 0,
+        "server_errors": 0,
+        "transport_errors": 0
+      },
+      "latency_ms": {
+        "med": 316.475809,
+        "p(95)": 367.2772134,
+        "p(99)": 368.97970748
+      },
+      "requests_per_second": 16.13458876971915,
+      "k6_window_seconds": 0.495829185,
+      "runner_wall_seconds": 1.281216407995089,
+      "api_responses": {
+        "api1": 4,
+        "api2": 4
+      },
+      "sql_delta": {
+        "calls": 134,
+        "rows": 33,
+        "execution_ms": 5.357405000001563,
+        "catalog_calls": 3,
+        "catalog_execution_ms": 0.03875600000000645
+      },
+      "ef_sql_log_events": 0,
+      "backlog": {
+        "pending": 5,
+        "failed": 0,
+        "oldest_age_seconds": 3.398177
+      },
+      "invariants": {
+        "stock_violations": 0,
+        "money_violations": 0,
+        "duplicate_checkout_orders": 0,
+        "orders": 5,
+        "products": 15,
+        "users": 9
+      }
+    },
+    "broker-outage": {
+      "requests": 8,
+      "successful": 8,
+      "expected_business_rejections": 0,
+      "errors": {
+        "unexpected_responses": 0,
+        "infrastructure_errors": 0,
+        "auth_errors": 0,
+        "validation_errors": 0,
+        "server_errors": 0,
+        "transport_errors": 0
+      },
+      "latency_ms": {
+        "med": 49.742941,
+        "p(95)": 139.45980269999995,
+        "p(99)": 162.65851893999996
+      },
+      "requests_per_second": 9.311463884533481,
+      "k6_window_seconds": 0.859155993,
+      "runner_wall_seconds": 1.6844039830029942,
+      "api_responses": {
+        "api1": 4,
+        "api2": 4
+      },
+      "sql_delta": {
+        "calls": 368,
+        "rows": 152,
+        "execution_ms": 93.01053099999899,
+        "catalog_calls": 24,
+        "catalog_execution_ms": 0.3792540000000031
+      },
+      "ef_sql_log_events": 0,
+      "backlog": {
+        "pending": 13,
+        "failed": 0,
+        "oldest_age_seconds": 2.733834
+      },
+      "invariants": {
+        "stock_violations": 0,
+        "money_violations": 0,
+        "duplicate_checkout_orders": 0,
+        "orders": 13,
+        "products": 15,
+        "users": 9
+      }
+    }
+  },
+  "broker_recovery": {
+    "wall_seconds": 9.654745513005764,
+    "before": {
+      "pending": 13,
+      "failed": 0,
+      "oldest_age_seconds": 3.122581
+    },
+    "after": {
+      "pending": 0,
+      "failed": 0,
+      "oldest_age_seconds": 0
+    },
+    "invariants": {
+      "stock_violations": 0,
+      "money_violations": 0,
+      "duplicate_checkout_orders": 0,
+      "orders": 13,
+      "products": 15,
+      "users": 9
+    }
+  },
+  "deterministic_faults": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "wall_seconds_including_setup_build": 35.29964738400304,
+    "recovery_boundaries": [
+      {
+        "scenario": "callback-cancel",
+        "recovery_wall_ms": 63.2487
+      },
+      {
+        "scenario": "callback-expiry",
+        "recovery_wall_ms": 219.6048
+      },
+      {
+        "scenario": "commit-before-ack",
+        "recovery_wall_ms": 39.3463
+      },
+      {
+        "scenario": "refund-timeout-Succeeded",
+        "recovery_wall_ms": 100.2524
+      },
+      {
+        "scenario": "refund-timeout-TimeoutAfterCapture",
+        "recovery_wall_ms": 199.3043
+      },
+      {
+        "scenario": "two-worker-lease",
+        "recovery_wall_ms": 782.1341
+      },
+      {
+        "scenario": "two-worker-refund-lease",
+        "recovery_wall_ms": 154.034
+      }
+    ],
+    "http_percentiles_throughput": null,
+    "interpretation": "Unmeasured HTTP load. Test-only gates with real PostgreSQL/broker/provider HTTP; simulated stops, not OS-kill evidence. Logical advances are separate from wall time."
+  },
+  "limitations": [
+    "Single machine; shared CPU/disk/bridge; no production capacity claim.",
+    "Counter throughput uses the complete k6 window, including authenticated setup for write bursts.",
+    "HTTP duration excludes connection setup; tiny write bursts and one cold read have no meaningful tail estimate.",
+    "SQL totals include control/readiness traffic; catalog_calls excludes separate mutable availability queries.",
+    "Warm runs prime 12 products/one category within the 30-second distributed-only TTL; no L1.",
+    "Sequential samples, no repeated statistical experiment or isolated bottleneck profile."
+  ]
+}

@@ -1,0 +1,23 @@
+x-log: &bounded-log
+  driver: json-file
+  options: { max-size: 5m, max-file: "2" }
+x-api-load: &api-load
+  cpus: 0.5
+  logging: *bounded-log
+  labels: { orderflow.disposable: "failure-load-v1" }
+  environment:
+    CatalogCache__Enabled: "${LOAD_CACHE_ENABLED:-false}"
+    Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command: "${LOAD_SQL_LOG_LEVEL:-Information}"
+services:
+  postgres:
+    cpus: 1
+    logging: *bounded-log
+    labels: { orderflow.disposable: "failure-load-v1" }
+    command: [postgres, -c, shared_preload_libraries=pg_stat_statements, -c, track_io_timing=on]
+  rabbitmq: { cpus: 0.5, logging: *bounded-log }
+  redis: { cpus: 0.25, logging: *bounded-log }
+  api1: { <<: *api-load }
+  api2: { <<: *api-load }
+  worker1: { cpus: 1, logging: *bounded-log }
+  worker2: { cpus: 1, logging: *bounded-log }
+  proxy: { cpus: 0.25, logging: *bounded-log }

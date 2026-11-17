@@ -213,6 +213,7 @@ public sealed class OutboxPublishingTests(PostgresServer server, RabbitMqServer 
         await SeedAsync(); var settings = broker.Settings(prefix);
         await using var first = new RabbitMqEventPublisher(settings); await using var second = new RabbitMqEventPublisher(settings);
         var pause = new PauseAfterPublish(first); var old = PublishAsync(pause);
+        var recovery = FailureEvidence.Start();
         try
         {
             await pause.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10)); clock.Advance(TimeSpan.FromSeconds(60));
@@ -222,6 +223,8 @@ public sealed class OutboxPublishingTests(PostgresServer server, RabbitMqServer 
         Assert.True(await old); var saved = await ReadAsync(); Assert.Equal(OutboxStatus.Published, saved.Status);
         Assert.Equal(2, saved.AttemptCount); Assert.Equal(clock.GetUtcNow(), saved.PublishedAt);
         Assert.Null(saved.LeaseToken);
+        FailureEvidence.Record(recovery, "two-worker-lease", new { workers = 2, logical_lease_advance_seconds = 60,
+            attempts = saved.AttemptCount, terminal_published_fact_preserved = true });
     }
 
     [Fact]

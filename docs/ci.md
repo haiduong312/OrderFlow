@@ -59,3 +59,6 @@ dc=(docker compose -f compose.deploy.yaml --env-file .local/ci-images/deployment
 Setup refuses overwriting existing secrets. Compose validates digest-pinned multi-stage API/Worker/simulator/frontend images, including locked restore and frontend typecheck/build. This does not start services, run migrations on a deployment DB, publish ports, push images or deploy. No production credential enters the build context. Existing volumes are unaffected.
 
 Exact local results and remaining limits are in [implementation status](implementation-status.md). Workflow syntax/source checks and local commands have been executed; no workflow execution on GitHub is claimed until an authorized push/remote run exists. Remote runner networking, registry limits and branch-protection configuration remain unverified here.
+
+
+The failure/load milestone additionally runs `python3 -m unittest discover -s infra/load -p 'test_*.py'` in the backend job for seven service-free target/fixture/report safety cases. Heavy k6/dependency-disruption scenarios are not started automatically in CI; they require the separate explicitly provisioned [disposable lab](load-testing.md). Existing integration selection already includes the underlying nine deterministic fault cases. No remote workflow execution is claimed for this addition.

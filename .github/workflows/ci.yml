@@ -39,6 +39,8 @@ jobs:
         run: bash infra/ci/build-backend.sh
       - name: Verify artifact privacy and failure gates
         run: python3 -m unittest discover -s infra/ci -p 'test_*.py'
+      - name: Verify disposable-load guards and measurement report privacy (no load execution)
+        run: python3 -m unittest discover -s infra/load -p 'test_*.py'
       - name: Focused service-free unit tests
         run: bash infra/ci/test-backend.sh unit
       - name: PostgreSQL and delivery integration tests (disposable Testcontainers)
