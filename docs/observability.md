@@ -2,6 +2,8 @@
 
 [ADR-031](adr/0031-opentelemetry-and-readiness.md) defines instrumentation, redaction, sampling and readiness. No migration is added; preserve all existing explicit migration/role/secret provisioning. Telemetry is optional and is not a correctness/audit dependency.
 
+[ADR-032](adr/0032-replicated-compose-deployment.md) adds a separate [deployment telemetry overlay](deployment.md) for API/Worker containers. Explicit AllowContainerHost permits exactly private http://telemetry:4318; production external targets still require HTTPS. No app depends_on the collector. The host-only standalone backend below stays available independently. Optional API realtime dispatch suspension and fatal-worker exit codes now make dependency admission/restart policy explicit without treating readiness as progress.
+
 ## Run the optional local backend
 
 ```bash

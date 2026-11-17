@@ -1,0 +1,267 @@
+# Standalone deployment-like local profile. No existing developer volume names are reused.
+x-api-env: &api-env
+  DOTNET_ENVIRONMENT: Production
+  ORDERFLOW_SETTINGS_FILE: /run/secrets/settings.json
+  ASPNETCORE_HTTP_PORTS: "8080"
+  AllowedHosts: ${ORDERFLOW_PUBLIC_HOST:-localhost}
+  Deployment__Enabled: "true"
+  Deployment__ProxyAddress: ${ORDERFLOW_PROXY_IP:-172.29.240.10}
+  Deployment__PublicHost: ${ORDERFLOW_PUBLIC_HOST:-localhost}
+  Deployment__KeyDirectory: /var/lib/orderflow/keys
+  Deployment__ApplicationName: OrderFlow.Deployment
+  Deployment__CertificatePath: /run/secrets/wrapping.pfx
+  Deployment__ExposeInstanceHeader: "true"
+  Startup__WaitForDependencies: "true"
+  Realtime__Enabled: "true"
+  Realtime__StopHostOnDispatchFailure: "false"
+  Realtime__RedisPrefix: orderflow.deployment
+  RabbitMq__HostName: rabbitmq
+  RabbitMq__VirtualHost: orderflow
+  RabbitMq__UserName: orderflow_app
+  RabbitMq__Prefix: orderflow.deployment
+  CatalogCache__Enabled: "true"
+x-api: &api
+  profiles: [deploy]
+  image: ${COMPOSE_PROJECT_NAME:-orderflow-deployment}-api:local
+  build: { context: ., dockerfile: infra/deployment/Dockerfile.dotnet, target: api }
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  restart: "on-failure:3"
+  stop_grace_period: 30s
+  mem_limit: 512m
+  secrets:
+    - { source: api_settings, target: settings.json }
+    - { source: wrapping_certificate, target: wrapping.pfx }
+  volumes: [data_protection:/var/lib/orderflow/keys]
+  depends_on:
+    postgres: { condition: service_healthy }
+  healthcheck:
+    test: [CMD, dotnet, OrderFlow.Api.dll, healthcheck]
+    interval: 10s
+    timeout: 5s
+    retries: 8
+    start_period: 15s
+  networks: [backend]
+x-worker-env: &worker-env
+  DOTNET_ENVIRONMENT: Production
+  ORDERFLOW_SETTINGS_FILE: /run/secrets/settings.json
+  Startup__WaitForDependencies: "true"
+  OutboxPublishing__Enabled: "true"
+  Notifications__Enabled: "true"
+  RabbitMq__HostName: rabbitmq
+  RabbitMq__VirtualHost: orderflow
+  RabbitMq__UserName: orderflow_app
+  RabbitMq__Prefix: orderflow.deployment
+  OrderExpiry__Enabled: "true"
+x-worker: &worker
+  profiles: [deploy]
+  image: ${COMPOSE_PROJECT_NAME:-orderflow-deployment}-worker:local
+  build: { context: ., dockerfile: infra/deployment/Dockerfile.dotnet, target: worker }
+  environment: *worker-env
+  secrets: [{ source: worker_settings, target: settings.json }]
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  restart: "on-failure:3"
+  stop_grace_period: 30s
+  mem_limit: 384m
+  depends_on:
+    postgres: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+  healthcheck:
+    test: [CMD, dotnet, OrderFlow.Worker.dll, check-readiness]
+    interval: 15s
+    timeout: 10s
+    retries: 5
+    start_period: 15s
+  networks: [backend]
+services:
+  postgres:
+    profiles: [deploy, tools, demo]
+    image: postgres:18.6-bookworm@sha256:5c4783a8cc3f0074912164f94dfa1be4e043438f0f707cf968d7af9a0d31a2c8
+    environment: { POSTGRES_DB: orderflow, POSTGRES_USER: orderflow_bootstrap, POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password }
+    secrets: [postgres_password, migrator_password, api_password, worker_password, simulator_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./infra/deployment/postgres-init.sql:/docker-entrypoint-initdb.d/roles.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U orderflow_bootstrap -d orderflow"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    stop_grace_period: 30s
+    mem_limit: 512m
+    networks: [backend]
+  rabbitmq:
+    profiles: [deploy]
+    image: rabbitmq:4.4.0-management@sha256:af6f50d38098d8bd52fef7f3fa85015dd8b2bf6def58e995bf584ae9ba0f6407
+    hostname: orderflow-deployment-rabbitmq
+    entrypoint: [/bin/sh, /usr/local/bin/orderflow-rabbitmq-entrypoint.sh]
+    command: [rabbitmq-server]
+    environment:
+      RABBITMQ_DEFAULT_USER: orderflow_app
+      RABBITMQ_DEFAULT_VHOST: orderflow
+      RABBITMQ_NODENAME: rabbit@orderflow-deployment-rabbitmq
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2 +SDcpu 1 +SDio 1"
+    secrets: [rabbitmq_password]
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./infra/rabbitmq/entrypoint.sh:/usr/local/bin/orderflow-rabbitmq-entrypoint.sh:ro
+    healthcheck:
+      test: [CMD, gosu, rabbitmq, rabbitmq-diagnostics, -q, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+    mem_limit: 512m
+    networks: [backend]
+  redis:
+    profiles: [deploy]
+    image: redis:8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
+    command: [redis-server, /run/secrets/redis.conf]
+    secrets: [{ source: redis_configuration, target: redis.conf }, redis_password]
+    volumes:
+      - redis_data:/data
+      - ./infra/deployment/redis-health.sh:/etc/orderflow/health.sh:ro
+    healthcheck:
+      test: [CMD, /bin/sh, /etc/orderflow/health.sh]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 15s
+    mem_limit: 128m
+    networks: [backend]
+  api1:
+    <<: *api
+    environment: { <<: *api-env, Deployment__InstanceName: api1, Realtime__InstanceName: api1, Database__ApplicationName: api1 }
+  api2:
+    <<: *api
+    environment: { <<: *api-env, Deployment__InstanceName: api2, Realtime__InstanceName: api2, Database__ApplicationName: api2 }
+  worker1:
+    <<: *worker
+    environment: { <<: *worker-env, Database__ApplicationName: worker1 }
+  worker2:
+    <<: *worker
+    environment: { <<: *worker-env, Database__ApplicationName: worker2 }
+  proxy:
+    profiles: [deploy]
+    image: ${COMPOSE_PROJECT_NAME:-orderflow-deployment}-proxy:local
+    build: { context: ., dockerfile: infra/deployment/Dockerfile.frontend }
+    environment: { ORDERFLOW_PUBLIC_HOST: "${ORDERFLOW_PUBLIC_HOST:-localhost}" }
+    ports: ["127.0.0.1:${ORDERFLOW_DEPLOY_PORT:-8443}:8443"]
+    secrets: [{ source: tls_certificate, target: tls.crt }, { source: tls_private_key, target: tls.key }]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    mem_limit: 128m
+    depends_on:
+      api1: { condition: service_healthy }
+      api2: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, --quiet, --spider, http://127.0.0.1:8080/healthz]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      backend: { ipv4_address: "${ORDERFLOW_PROXY_IP:-172.29.240.10}" }
+      edge: {}
+  migrate:
+    profiles: [tools]
+    image: ${COMPOSE_PROJECT_NAME:-orderflow-deployment}-worker:local
+    build: { context: ., dockerfile: infra/deployment/Dockerfile.dotnet, target: worker }
+    command: [migrate]
+    environment: { ORDERFLOW_SETTINGS_FILE: /run/secrets/settings.json, Deployment__GrantRuntimeRoles: "true" }
+    secrets: [{ source: migrator_settings, target: settings.json }]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: { postgres: { condition: service_healthy } }
+    networks: [backend]
+  bootstrap-admin:
+    profiles: [tools]
+    image: ${COMPOSE_PROJECT_NAME:-orderflow-deployment}-worker:local
+    command: [seed-development-account]
+    environment: { DOTNET_ENVIRONMENT: Development, ORDERFLOW_SETTINGS_FILE: /run/secrets/settings.json }
+    secrets: [{ source: bootstrap_settings, target: settings.json }]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: { postgres: { condition: service_healthy } }
+    networks: [backend]
+  simulator:
+    profiles: [demo]
+    image: ${COMPOSE_PROJECT_NAME:-orderflow-deployment}-simulator:local
+    build: { context: ., dockerfile: infra/deployment/Dockerfile.dotnet, target: simulator }
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      ORDERFLOW_SETTINGS_FILE: /run/secrets/settings.json
+      Simulator__Enabled: "true"
+      Simulator__AllowContainerNetwork: "true"
+    secrets: [{ source: simulator_settings, target: settings.json }]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck:
+      test: [CMD, dotnet, OrderFlow.Simulator.dll, healthcheck]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks: [backend]
+  mailpit:
+    profiles: [demo]
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    environment: { MP_DATABASE: /data/mailpit.db, MP_IGNORE_DUPLICATE_IDS: "false", MP_DISABLE_VERSION_CHECK: "true", MP_QUIET: "true" }
+    volumes: [mailpit_data:/data]
+    ports: ["127.0.0.1:${ORDERFLOW_DEPLOY_MAIL_PORT:-8026}:8025"]
+    healthcheck: { test: [CMD, /mailpit, readyz], interval: 5s, timeout: 3s, retries: 15 }
+    networks: [backend, edge]
+  telemetry:
+    profiles: [telemetry]
+    image: grafana/otel-lgtm:0.41.0@sha256:2e3290657f2f2a256c7a9175f097424a3ac5b54840741ace433e108e109348b6
+    environment: { GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer, GF_AUTH_DISABLE_LOGIN_FORM: "true", GF_ANALYTICS_REPORTING_ENABLED: "false" }
+    ports: ["127.0.0.1:${ORDERFLOW_DEPLOY_TELEMETRY_PORT:-3001}:3000"]
+    volumes:
+      - ./infra/telemetry/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/orderflow.yaml:ro
+      - ./infra/telemetry/orderflow.json:/otel-lgtm/orderflow-dashboard.json:ro
+    healthcheck: { test: [CMD, curl, --fail, --silent, http://127.0.0.1:13133/ready], interval: 3s, timeout: 2s, retries: 40, start_period: 15s }
+    mem_limit: 2g
+    networks: [backend, edge]
+networks:
+  edge: {} # Only explicitly published loopback ports admit host traffic.
+  backend:
+    internal: true
+    ipam: { config: [{ subnet: "${ORDERFLOW_DEPLOY_SUBNET:-172.29.240.0/24}" }] }
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  redis_data:
+  data_protection:
+  mailpit_data:
+secrets:
+  postgres_password: { file: "${ORDERFLOW_DEPLOY_CONFIG:?Run the private deployment setup}/postgres_password" }
+  migrator_password: { file: "${ORDERFLOW_DEPLOY_CONFIG}/migrator_password" }
+  api_password: { file: "${ORDERFLOW_DEPLOY_CONFIG}/api_password" }
+  worker_password: { file: "${ORDERFLOW_DEPLOY_CONFIG}/worker_password" }
+  simulator_password: { file: "${ORDERFLOW_DEPLOY_CONFIG}/simulator_password" }
+  rabbitmq_password: { file: "${ORDERFLOW_DEPLOY_CONFIG}/rabbitmq_password" }
+  redis_password: { file: "${ORDERFLOW_DEPLOY_CONFIG}/redis_password" }
+  redis_configuration: { file: "${ORDERFLOW_DEPLOY_CONFIG}/redis.conf" }
+  api_settings: { file: "${ORDERFLOW_DEPLOY_CONFIG}/api.json" }
+  worker_settings: { file: "${ORDERFLOW_DEPLOY_CONFIG}/worker.json" }
+  migrator_settings: { file: "${ORDERFLOW_DEPLOY_CONFIG}/migrator.json" }
+  bootstrap_settings: { file: "${ORDERFLOW_DEPLOY_CONFIG}/bootstrap.json" }
+  simulator_settings: { file: "${ORDERFLOW_DEPLOY_CONFIG}/simulator.json" }
+  wrapping_certificate: { file: "${ORDERFLOW_DEPLOY_CONFIG}/wrapping.pfx" }
+  tls_certificate: { file: "${ORDERFLOW_DEPLOY_CONFIG}/tls.crt" }
+  tls_private_key: { file: "${ORDERFLOW_DEPLOY_CONFIG}/tls.key" }

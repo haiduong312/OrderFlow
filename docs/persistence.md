@@ -4,7 +4,7 @@ One scoped OrderFlowDbContext contains Identity and the three durable reliabilit
 
 ## Local PostgreSQL only
 
-Use Docker Engine with Compose v2+ (the `!reset` verification workaround described in status is not needed for a normal local daemon). The committed [compose.yaml](../compose.yaml) includes a `dev` PostgreSQL service: PostgreSQL **18.6-bookworm**, pinned to the pulled official multi-platform digest. It binds only loopback, uses a named volume and `pg_isready` health checks. The `dev` profile also includes RabbitMQ; use `up -d postgres` for PostgreSQL alone. See [messaging](messaging.md) for broker setup. No API/Worker container is added.
+Use Docker Engine with Compose v2+. The committed [compose.yaml](../compose.yaml) includes a PostgreSQL-only `dev` profile: PostgreSQL **18.6-bookworm**, pinned to the pulled official multi-platform digest. It binds only loopback, uses a named volume and `pg_isready` health checks. Add the `messaging` profile explicitly for RabbitMQ; see [messaging](messaging.md). Replicated API/Worker images and separate runtime/migration roles are in the standalone [deployment profile](deployment.md), with independent volumes.
 
 From repository root in Bash, prepare a private random credential once:
 
@@ -27,7 +27,7 @@ Export the application connection privately (the generated hex password avoids c
 export ConnectionStrings__OrderFlow="Host=127.0.0.1;Port=${ORDERFLOW_DB_PORT};Database=orderflow;Username=orderflow_dev;Password=$(cat "$ORDERFLOW_DB_PASSWORD_FILE")"
 ```
 
-Configuration is read from standard .NET providers. Hosts resolve a scoped context lazily; missing configuration gives an explicit error when persistence is requested. Normal API liveness and idle worker startup need no DB connection and do not claim readiness. Do not put the connection string in launch arguments, tracked appsettings, output logs, or .env.example. The development database owner is for local work/tests only, not a production runtime credential. Least-privilege runtime/migration-role deployment is still a later operations obligation.
+Configuration is read from standard .NET providers. Hosts resolve a scoped context lazily; missing configuration gives an explicit error when persistence is requested. Normal API liveness and idle worker startup need no DB connection and do not claim readiness; the deployment profile explicitly enables bounded dependency waiting. Do not put the connection string in launch arguments, tracked appsettings, output logs, or .env.example. The development database owner is for local work/tests only. The separate deployment profile provisions non-owner runtime roles and an explicit schema-owner migrator; production privilege/secret lifecycle still requires operational review.
 
 ## Dedicated migration step
 

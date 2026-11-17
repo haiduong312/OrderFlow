@@ -15,8 +15,8 @@ for name in postgres rabbitmq; do
 done
 export ORDERFLOW_DB_PASSWORD_FILE="$PWD/.local/postgres-password"
 export ORDERFLOW_RABBIT_PASSWORD_FILE="$PWD/.local/rabbitmq-password"
-docker compose --profile dev config --quiet
-docker compose --profile dev up -d --wait --wait-timeout 90
+docker compose --profile dev --profile messaging config --quiet
+docker compose --profile dev --profile messaging up -d --wait --wait-timeout 90
 ```
 
 For the broker alone use `docker compose --profile messaging up -d --wait rabbitmq`; Compose still requires the DB password-file variable during configuration validation. Ports bind loopback only: 5672 AMQP and 15672 management; override ORDERFLOW_RABBIT_PORT / ORDERFLOW_RABBIT_MANAGEMENT_PORT if needed. Broker user is orderflow_dev, vhost orderflow. No secret is stored in tracked configuration; the wrapper reads the Compose secret then calls the official entrypoint. Do not enable shell tracing or print environment/credentials. Health diagnostics run as rabbitmq, avoiding a root-owned Erlang cookie during first startup.

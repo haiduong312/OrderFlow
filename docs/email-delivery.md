@@ -2,6 +2,8 @@
 
 Order confirmation commits independently of mail. The order-event consumer saves a durable email intention; a separate sender calls the gateway outside transactions. Local SMTP acceptance is recorded as Sent, not as proof of recipient delivery/read. SMTP retries can duplicate mail after an uncertain send; no exactly-once claim.
 
+The optional local [Docker deployment overlay](deployment.md) additionally permits exactly the mailpit container hostname through an explicit flag. Development/Testing restrictions and .invalid-only recipients remain. This narrowly extends the host-only numeric-loopback examples below; no production email adapter is added.
+
 ## Setup
 
 Use existing [PostgreSQL](persistence.md), [RabbitMQ](messaging.md), [notification consumer](notifications.md) and [payment simulator](payment-recovery.md) private configuration. No package/SDK changes; .NET 10 async/cancellable local SMTP adapter. Explicitly migrate **20261112082134_AddEmailDeliveries** before enabling new code:

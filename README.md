@@ -1,6 +1,6 @@
 # OrderFlow
 
-A portfolio modular monolith for ASP.NET Core / full-stack development. Current delivery adds optional OpenTelemetry tracing, safe structured logs, bounded operational metrics and explicit API/Worker readiness. Durable event context connects HTTP checkout, outbox publication and notification handling. An isolated optional local profile supplies OTLP Collector, Prometheus, Tempo, Loki and a Grafana dashboard; core checkout has no exporter dependency. Existing customer/Admin workspaces and PostgreSQL correctness remain intact. See [observability setup and verification](docs/observability.md), [Admin runbook](docs/admin-ui.md), [frontend setup](docs/frontend.md) and [implementation status](docs/implementation-status.md).
+A portfolio modular monolith for ASP.NET Core / full-stack development. Current delivery adds a reproducible local HTTPS deployment profile: built React/nginx frontend, two APIs with encrypted shared cookie keys, two workers, PostgreSQL, RabbitMQ and Redis. Explicit migration and optional simulator/mail/telemetry profiles preserve durable work and same-origin browser routing. See [deployment and replica verification](docs/deployment.md), [observability](docs/observability.md), [Admin runbook](docs/admin-ui.md), [frontend setup](docs/frontend.md) and [implementation status](docs/implementation-status.md).
 
 Read the [project contract](docs/project-spec.md), [architecture](docs/architecture.md), [ADRs](docs/adr/README.md), and [implementation status](docs/implementation-status.md) before adding features. Repository working rules are in [AGENTS.md](AGENTS.md).
 
@@ -11,6 +11,8 @@ Read the [project contract](docs/project-spec.md), [architecture](docs/architect
 - NuGet.org access is required on the first restore. Docker is required for the default Testcontainers integration suite (an explicit actual PostgreSQL connection is also supported); payment tests self-host the restricted simulator on loopback, without an external payment provider. Full tests now also need Node **24.19.0**, npm **11.17.0**, client dependencies and Playwright Chromium; backend-only runs can use `--filter 'Category!=Browser'`.
 
 Follow the [PostgreSQL guide](docs/persistence.md) to generate a private password file, start the PostgreSQL-only Compose dev profile, export connection settings and run the **dedicated migration step**. The guide documents safe repeatable seeding, persistent volumes, inspection and manual reset. API/worker never migrate or seed automatically. Tests automatically start disposable PostgreSQL through Testcontainers. An optional private ORDERFLOW_TEST_POSTGRES connection with CREATE DATABASE permission overrides Docker. See the [testing guide](docs/testing.md) for lifecycle, per-case isolation, synchronization and service-free commands.
+
+For the separate deployment rehearsal, run `python3 infra/deployment/setup.py` and follow the [explicit build → dependencies → migrate → replicas steps](docs/deployment.md). Container builds have their own published SDK10.0.404 pin; local SDK selection remains10.0.115. `bash infra/deployment/verify.sh` creates an isolated test project and preserves its volumes. Base `dev` starts PostgreSQL only; messaging/email/cache/realtime stay optional. Nothing is published beyond loopback.
 
 ## Restore, build, and test
 

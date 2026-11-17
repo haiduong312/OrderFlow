@@ -1,0 +1,11 @@
+# Local snap Docker/AppArmor compatibility ONLY. See docs/deployment.md.
+# Keep non-root UIDs, dropped capabilities, read-only roots and private networks.
+services:
+  api1: { security_opt: !override [no-new-privileges:false] }
+  api2: { security_opt: !override [no-new-privileges:false] }
+  worker1: { security_opt: !override [no-new-privileges:false] }
+  worker2: { security_opt: !override [no-new-privileges:false] }
+  proxy: { security_opt: !override [no-new-privileges:false] }
+  migrate: { security_opt: !override [no-new-privileges:false] }
+  bootstrap-admin: { security_opt: !override [no-new-privileges:false] }
+  simulator: { security_opt: !override [no-new-privileges:false] }

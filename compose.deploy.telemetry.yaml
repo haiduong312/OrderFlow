@@ -1,0 +1,13 @@
+# Collector is deliberately not a depends_on/startup/readiness dependency of applications.
+services:
+  api1:
+    environment:
+      <<: &telemetry-env
+        Telemetry__Enabled: "true"
+        Telemetry__OtlpEnabled: "true"
+        Telemetry__AllowContainerHost: "true"
+        Telemetry__Endpoint: http://telemetry:4318/
+      Telemetry__InstanceName: api1
+  api2: { environment: { <<: *telemetry-env, Telemetry__InstanceName: api2 } }
+  worker1: { environment: { <<: *telemetry-env, Telemetry__InstanceName: worker1 } }
+  worker2: { environment: { <<: *telemetry-env, Telemetry__InstanceName: worker2 } }

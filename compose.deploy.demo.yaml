@@ -1,0 +1,32 @@
+# Optional private Development-only simulator + .invalid SMTP sink. APIs retain Production auth settings.
+services:
+  api1:
+    environment: { PaymentCallbacks__Enabled: "true" }
+    secrets: [{ source: api_demo_settings, target: settings.json }]
+  api2:
+    environment: { PaymentCallbacks__Enabled: "true" }
+    secrets: [{ source: api_demo_settings, target: settings.json }]
+  worker1:
+    environment: &demo-worker
+      DOTNET_ENVIRONMENT: Development
+      PaymentSettlement__Enabled: "true"
+      PaymentProcessing__Enabled: "true"
+      PaymentReconciliation__Enabled: "true"
+      RefundProcessing__Enabled: "true"
+      PaymentGateway__BaseUrl: http://simulator:8090/
+      PaymentGateway__AllowContainerHost: "true"
+      EmailSending__Enabled: "true"
+      EmailSending__Host: mailpit
+      EmailSending__AllowContainerHost: "true"
+    secrets: [{ source: worker_demo_settings, target: settings.json }]
+    depends_on: { simulator: { condition: service_healthy }, mailpit: { condition: service_healthy } }
+  worker2:
+    environment: *demo-worker
+    secrets: [{ source: worker_demo_settings, target: settings.json }]
+    depends_on: { simulator: { condition: service_healthy }, mailpit: { condition: service_healthy } }
+  simulator:
+    ports: ["127.0.0.1:${ORDERFLOW_DEPLOY_SIMULATOR_PORT:-5091}:8090"]
+    networks: [backend, edge]
+secrets:
+  api_demo_settings: { file: "${ORDERFLOW_DEPLOY_CONFIG}/api-demo.json" }
+  worker_demo_settings: { file: "${ORDERFLOW_DEPLOY_CONFIG}/worker-demo.json" }

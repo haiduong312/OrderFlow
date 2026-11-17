@@ -20,12 +20,13 @@ public sealed class ObservabilityTests
     [Fact]
     public void Production_metric_views_apply_explicit_checkout_buckets_and_bounded_cardinality()
     {
-        var configuration=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Telemetry:Enabled"]="true" }).Build();
+        var configuration=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Telemetry:Enabled"]="true", ["Telemetry:InstanceName"]="api1" }).Build();
         var services=new ServiceCollection(); services.AddSingleton<IConfiguration>(configuration);
         var export=new MetricCapture();
         services.AddLogging(logging=>services.AddOrderFlowTelemetry(configuration,logging,"orderflow-metric-test")!
             .WithMetrics(metrics=>metrics.AddReader(new PeriodicExportingMetricReader(export,exportIntervalMilliseconds:60_000))));
         using var container=services.BuildServiceProvider(); var provider=container.GetRequiredService<MeterProvider>();
+        Assert.Contains(provider.GetResource().Attributes, attribute => attribute.Key == "service.instance.id" && Equals(attribute.Value, "api1"));
         OrderFlowTelemetry.CheckoutCompleted(Stopwatch.GetTimestamp(),201,false);
         using var meter=new Meter(OrderFlowTelemetry.MeterName);
         var counter=meter.CreateCounter<long>("orderflow_test_cardinality");
@@ -42,6 +43,11 @@ public sealed class ObservabilityTests
         foreach (var endpoint in new[] { "http://external.invalid/", "https://user:password@example.invalid/", "https://example.invalid/?key=secret", "https://example.invalid/v1/traces" })
             Assert.Throws<InvalidOperationException>(() => Settings(endpoint));
         Assert.True(Settings("http://127.0.0.1:4318/").OtlpEnabled);
+        var instanceConfig = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["Telemetry:Enabled"] = "true", ["Telemetry:InstanceName"] = "api1" }).Build();
+        Assert.Equal("api1", TelemetrySettings.Read(instanceConfig).InstanceName);
+        instanceConfig["Telemetry:InstanceName"] = "user/private";
+        Assert.Throws<InvalidOperationException>(() => TelemetrySettings.Read(instanceConfig));
         Assert.Throws<InvalidOperationException>(() => TelemetrySettings.Read(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>
             { ["Telemetry:Enabled"]="true", ["Telemetry:TraceSampleRatio"]="NaN" }).Build()));
     }

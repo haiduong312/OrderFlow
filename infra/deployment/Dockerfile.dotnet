@@ -1,0 +1,41 @@
+# Host development keeps global.json's Ubuntu SDK pin. Container SDK pin is explicit and separate.
+FROM mcr.microsoft.com/dotnet/sdk:10.0.404-noble@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb AS build
+WORKDIR /source
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=true
+COPY Directory.Build.props Directory.Packages.props ./
+COPY infra/deployment/global.container.json ./global.json
+COPY src/OrderFlow.Application/OrderFlow.Application.csproj src/OrderFlow.Application/packages.lock.json src/OrderFlow.Application/
+COPY src/OrderFlow.Api/OrderFlow.Api.csproj src/OrderFlow.Api/packages.lock.json src/OrderFlow.Api/
+COPY src/OrderFlow.Worker/OrderFlow.Worker.csproj src/OrderFlow.Worker/packages.lock.json src/OrderFlow.Worker/
+COPY src/OrderFlow.Simulator/OrderFlow.Simulator.csproj src/OrderFlow.Simulator/packages.lock.json src/OrderFlow.Simulator/
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet restore src/OrderFlow.Api --locked-mode --disable-parallel
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet restore src/OrderFlow.Worker --locked-mode --disable-parallel
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet restore src/OrderFlow.Simulator --locked-mode --disable-parallel
+COPY src ./src
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet publish src/OrderFlow.Api -c Release --no-restore --no-self-contained -p:UseAppHost=false -o /out/api
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet publish src/OrderFlow.Worker -c Release --no-restore --no-self-contained -p:UseAppHost=false -o /out/worker
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet publish src/OrderFlow.Simulator -c Release --no-restore --no-self-contained -p:UseAppHost=false -o /out/simulator
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.15-noble@sha256:bfd912c83295ce66d4b706ebb8541b9f14259b0e76fbb88b2751f58ce2399d2e AS api
+WORKDIR /app
+RUN mkdir -p /var/lib/orderflow/keys && chown -R 1654:1654 /var/lib/orderflow && chmod 0700 /var/lib/orderflow/keys
+COPY --from=build --chown=1654:1654 /out/api ./
+USER 1654:1654
+ENV ASPNETCORE_HTTP_PORTS=8080 DOTNET_ENVIRONMENT=Production
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "OrderFlow.Api.dll"]
+
+FROM mcr.microsoft.com/dotnet/runtime:10.0.15-noble@sha256:80a51954ac70925e5783cb1ed35129a4243dcb1cddef20066b67346e17db284d AS worker
+WORKDIR /app
+COPY --from=build --chown=1654:1654 /out/worker ./
+USER 1654:1654
+ENV DOTNET_ENVIRONMENT=Production
+ENTRYPOINT ["dotnet", "OrderFlow.Worker.dll"]
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.15-noble@sha256:bfd912c83295ce66d4b706ebb8541b9f14259b0e76fbb88b2751f58ce2399d2e AS simulator
+WORKDIR /app
+COPY --from=build --chown=1654:1654 /out/simulator ./
+USER 1654:1654
+ENV ASPNETCORE_URLS=http://0.0.0.0:8090 DOTNET_ENVIRONMENT=Development
+EXPOSE 8090
+ENTRYPOINT ["dotnet", "OrderFlow.Simulator.dll"]

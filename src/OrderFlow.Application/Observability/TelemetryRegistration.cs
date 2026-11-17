@@ -31,8 +31,8 @@ public static class TelemetryRegistration
         if (!settings.Enabled) return null;
         // Correlate by W3C context only; never forward arbitrary inbound baggage to dependencies.
         Sdk.SetDefaultTextMapPropagator(new TraceContextPropagator());
-        var resource = ResourceBuilder.CreateEmpty().AddService(serviceName, autoGenerateServiceInstanceId: false);
-        var builder = services.AddOpenTelemetry().ConfigureResource(r => r.AddService(serviceName, autoGenerateServiceInstanceId: false));
+        var resource = ResourceBuilder.CreateEmpty().AddService(serviceName, autoGenerateServiceInstanceId: false, serviceInstanceId: settings.InstanceName);
+        var builder = services.AddOpenTelemetry().ConfigureResource(r => r.AddService(serviceName, autoGenerateServiceInstanceId: false, serviceInstanceId: settings.InstanceName));
         builder.WithTracing(traces =>
         {
             traces.SetResourceBuilder(resource).SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(settings.TraceSampleRatio)))

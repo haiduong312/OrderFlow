@@ -4,11 +4,19 @@ using OrderFlow.Application.Modules.Identity;
 using Microsoft.AspNetCore.Identity;
 using OrderFlow.Application.Observability;
 using System.Text.Json;
+using OrderFlow.Application.Hosting;
 
 var seedAccount = args is ["seed-development-account"];
 var seed = args is ["seed-development"] || seedAccount;
 var readiness = args is ["check-readiness"];
-using var host = WorkerHost.Build(seed || readiness ? [] : args, runBackgroundJobs: !seed && !readiness);
+var migrate = args is ["migrate"];
+using var host = WorkerHost.Build(seed || readiness || migrate ? [] : args, runBackgroundJobs: !seed && !readiness && !migrate);
+if (migrate)
+{
+    using var budget = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+    await DeploymentMigration.RunAsync(host.Services, budget.Token);
+    return;
+}
 if (readiness)
 {
     await host.StartAsync();
@@ -64,4 +72,7 @@ if (seed)
     return;
 }
 
+await StartupReadiness.WaitAsync(host.Services, host.Services.GetRequiredService<IConfiguration>(), CancellationToken.None);
+var backgroundServices = host.Services.GetServices<IHostedService>().OfType<BackgroundService>().ToArray();
 await host.RunAsync();
+if (backgroundServices.Any(service => service.ExecuteTask?.IsFaulted == true)) Environment.ExitCode = 1;

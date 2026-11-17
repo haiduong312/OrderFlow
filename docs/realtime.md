@@ -2,6 +2,8 @@
 
 Durable Notifications and order HTTP APIs remain the source of truth. Realtime carries a small hint to refetch; it is neither an inbox nor an exactly-once/durable notification channel. NotificationCreated still originates from the existing transactional outbox.
 
+The standalone [deployment profile](deployment.md) now supplies actual nginx TLS/Upgrade/negotiation affinity, trusted forwarding and encrypted shared cookie keys across two APIs under [ADR-032](adr/0032-replicated-compose-deployment.md). The host-only development examples below retain loopback Redis. Deployment optional dispatch can suspend after finite failure with event2407 while HTTP remains available; repair/restart resumes it. WebSockets with negotiation remain the only supported transport.
+
 ## Setup and API configuration
 
 Use the SDK in global.json and existing private [PostgreSQL](persistence.md), [RabbitMQ](messaging.md), [notification consumer](notifications.md) setup. This milestone has no database migration. Official SignalR Redis backplane and test client are pinned to 10.0.15; existing SDK/EF pins remain. The patched package avoids the 10.0.14 backplane advisory documented in [ADR-024](adr/0024-signalr-notification-hints.md).

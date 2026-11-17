@@ -22,7 +22,7 @@ internal sealed class RealtimeApiHost : IAsyncDisposable
     public Uri Address { get; private set; } = null!;
     public RealtimeLog Logs { get; } = new();
     private RealtimeApiHost(PostgresDatabase db, string redis, RabbitMqSettings broker, string name, string prefix, bool dispatch,
-        IDataProtectionProvider keys, TimeSpan? expiry)
+        IDataProtectionProvider keys, TimeSpan? expiry, bool stopHostOnDispatchFailure)
     {
         App = Api.Program.Build(["--environment", "Development"], builder =>
         {
@@ -31,6 +31,7 @@ internal sealed class RealtimeApiHost : IAsyncDisposable
                 ["ConnectionStrings:OrderFlow"] = db.ConnectionString, ["Urls"] = "http://127.0.0.1:0",
                 ["Authentication:AllowInsecureHttp"] = "true", ["Realtime:Enabled"] = "true", ["Realtime:DispatchEnabled"] = dispatch.ToString(),
                 ["Realtime:RedisConnectionString"] = redis, ["Realtime:RedisPrefix"] = prefix, ["Realtime:InstanceName"] = name,
+                ["Realtime:StopHostOnDispatchFailure"] = stopHostOnDispatchFailure.ToString(),
                 // Referenced hosts share appsettings output names; the simulator's Warning default
                 // must not filter this test's deterministic post-ACK Information signal.
                 ["Logging:LogLevel:OrderFlow.Api.Realtime.RealtimeDeliveryHandler"] = "Information",
@@ -44,9 +45,9 @@ internal sealed class RealtimeApiHost : IAsyncDisposable
         });
     }
     public static async Task<RealtimeApiHost> StartAsync(PostgresDatabase db, string redis, RabbitMqSettings broker, string name, string prefix,
-        bool dispatch, IDataProtectionProvider keys, TimeSpan? expiry = null)
+        bool dispatch, IDataProtectionProvider keys, TimeSpan? expiry = null, bool stopHostOnDispatchFailure = true)
     {
-        var host = new RealtimeApiHost(db, redis, broker, name, prefix, dispatch, keys, expiry);
+        var host = new RealtimeApiHost(db, redis, broker, name, prefix, dispatch, keys, expiry, stopHostOnDispatchFailure);
         try
         {
             using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(30)); await host.App.StartAsync(budget.Token);
@@ -95,7 +96,7 @@ internal sealed class RealtimeLog : ILoggerProvider
         public void Log<TState>(LogLevel level, EventId id, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
             owner.Messages.Enqueue(category + ":" + formatter(state, exception));
-            if (id.Id is >= 2401 and <= 2406) owner.Events.Writer.TryWrite(id.Id);
+            if (id.Id is >= 2401 and <= 2407) owner.Events.Writer.TryWrite(id.Id);
         }
     }
 }

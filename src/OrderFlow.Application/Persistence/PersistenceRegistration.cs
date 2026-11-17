@@ -13,13 +13,13 @@ public static class PersistenceRegistration
     {
         // Options are resolved lazily: liveness/startup do not connect to or migrate PostgreSQL.
         services.AddDbContext<OrderFlowDbContext>(options => Configure(options,
-            configuration.GetConnectionString("OrderFlow")));
+            configuration.GetConnectionString("OrderFlow"), configuration["Database:ApplicationName"]));
         return services.AddIdentityCore<ApplicationUser>(IdentityPolicy.Configure)
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<OrderFlowDbContext>();
     }
 
-    public static void Configure(DbContextOptionsBuilder options, string? connectionString)
+    public static void Configure(DbContextOptionsBuilder options, string? connectionString, string? applicationName = null)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -31,6 +31,12 @@ public static class PersistenceRegistration
             IncludeErrorDetail = false,
             PersistSecurityInfo = false
         };
+        if (applicationName is not null)
+        {
+            if (applicationName.Length is < 1 or > 40 || applicationName.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-'))
+                throw new InvalidOperationException("Use a safe database process application name.");
+            safeOptions.ApplicationName = applicationName;
+        }
         options.UseNpgsql(safeOptions.ConnectionString, postgres =>
         {
             postgres.MigrationsHistoryTable("__EFMigrationsHistory", "messaging");

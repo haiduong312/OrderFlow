@@ -1,0 +1,19 @@
+FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS build
+WORKDIR /source
+RUN npm install --global npm@11.17.0
+COPY client/package.json client/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY client ./
+ARG VITE_ORDERFLOW_REALTIME=true
+ENV VITE_ORDERFLOW_REALTIME=$VITE_ORDERFLOW_REALTIME
+RUN npm run build
+
+FROM nginx:1.30.6-alpine@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a
+COPY --from=build --chown=101:101 /source/dist /usr/share/nginx/html
+COPY infra/deployment/nginx.conf.template /etc/orderflow/nginx.conf.template
+COPY infra/deployment/start-proxy.sh /etc/orderflow/start-proxy.sh
+USER 101:101
+ENV ORDERFLOW_PUBLIC_HOST=localhost
+EXPOSE 8443 8080
+STOPSIGNAL SIGQUIT
+ENTRYPOINT ["/bin/sh", "/etc/orderflow/start-proxy.sh"]

@@ -6,6 +6,7 @@ public sealed class RealtimeSettings
 {
     public bool Enabled { get; init; }
     public bool DispatchEnabled { get; init; } = true;
+    public bool StopHostOnDispatchFailure { get; init; } = true;
     public string RedisConnectionString { get; init; } = "";
     public string RedisPrefix { get; init; } = "orderflow.realtime.v1";
     public string InstanceName { get; init; } = "api-" + Guid.NewGuid().ToString("N");

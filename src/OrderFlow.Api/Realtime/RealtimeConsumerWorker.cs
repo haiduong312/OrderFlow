@@ -1,5 +1,6 @@
 using OrderFlow.Application.Messaging;
 using RabbitMQ.Client.Exceptions;
+using OrderFlow.Application.Observability;
 
 namespace OrderFlow.Api.Realtime;
 
@@ -11,6 +12,14 @@ public sealed class RealtimeConsumerWorker(RabbitMqSettings broker, RealtimeSett
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         try { await Task.WhenAll(RunAsync(broker.RealtimeQueue, stop), RunAsync(broker.RealtimeRetryQueue, stop)); }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+        catch (Exception failure) when (!stoppingToken.IsCancellationRequested && !settings.StopHostOnDispatchFailure)
+        {
+            // Optional live hints must not take checkout down. Bounded retries above are exhausted;
+            // keep durable HTTP state available and require an operator restart to resume dispatch.
+            OrderFlowTelemetry.ProcessingFailed(ProcessingComponent.Realtime, Retryable(failure) ? FailureKind.Dependency : FailureKind.Unexpected);
+            logger.LogError(new EventId(2407, "RealtimeDispatchSuspended"), failure,
+                "API {Instance} realtime dispatch suspended; durable HTTP state remains available; restart after repairing configuration/dependency", settings.InstanceName);
+        }
     }
     private async Task RunAsync(string queue, CancellationTokenSource stop)
     {

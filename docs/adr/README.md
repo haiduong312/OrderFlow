@@ -47,4 +47,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-031](0031-opentelemetry-and-readiness.md) | Optional OpenTelemetry, durable event trace lineage, safe structured logs/metrics and intentional API/Worker readiness |
 
+| [ADR-032](0032-replicated-compose-deployment.md) | Local replicated TLS Compose, shared encrypted cookie keys, hub affinity, explicit migrations and process recovery |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

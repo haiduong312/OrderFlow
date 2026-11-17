@@ -10,11 +10,12 @@ public sealed class DevelopmentSmtpOptions
 {
     public string Host { get; init; } = "127.0.0.1";
     public int Port { get; init; } = 1025;
+    public bool AllowContainerHost { get; init; }
     public int TimeoutSeconds { get; init; } = 10;
     public void Validate()
     {
-        if (!IPAddress.TryParse(Host, out var address) || !IPAddress.IsLoopback(address) || Port is < 1 or > 65535 || TimeoutSeconds is < 1 or > 20)
-            throw new InvalidOperationException("Development SMTP requires a numeric loopback address, valid port and timeout 1–20 seconds.");
+        if (!(IPAddress.TryParse(Host, out var address) && IPAddress.IsLoopback(address)) && !(AllowContainerHost && Host == "mailpit") || Port is < 1 or > 65535 || TimeoutSeconds is < 1 or > 20)
+            throw new InvalidOperationException("Development SMTP requires loopback or explicit mailpit container host, valid port and timeout 1–20 seconds.");
     }
 }
 

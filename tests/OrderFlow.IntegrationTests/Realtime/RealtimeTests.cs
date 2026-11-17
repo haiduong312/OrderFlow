@@ -58,6 +58,21 @@ public sealed class RealtimeTests(PostgresServer server, RabbitMqServer broker, 
     }
 
     [Fact]
+    public async Task Deployment_can_suspend_failed_optional_dispatch_without_stopping_checkout_or_HTTP_readiness()
+    {
+        var valid = Broker;
+        var rejected = new RabbitMqSettings { HostName = valid.HostName, Port = valid.Port, VirtualHost = valid.VirtualHost,
+            UserName = valid.UserName, Password = "Fixture-invalid-broker-password", Prefix = valid.Prefix };
+        await using var host = await RealtimeApiHost.StartAsync(Database, redis.ConnectionString, rejected, "degraded", prefix,
+            true, keys, stopHostOnDispatchFailure: false);
+        await host.Logs.WaitAsync(2407); // Permanent auth failure: finite exit of optional dispatcher, no hidden retry loop.
+        var user = await host.UserAsync(); var (client, cookies) = await host.LoginAsync(user.Email, user.Password); using var browser = client;
+        await NotificationAsync(browser); // Includes a real HTTP checkout and committed source event.
+        using var ready = await browser.GetAsync("/api/health/ready"); Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
+        Assert.False(host.App.Lifetime.ApplicationStopping.IsCancellationRequested);
+    }
+
+    [Fact]
     public async Task Two_API_instances_Rabbit_on_A_reaches_owner_connections_on_B_through_real_Redis_with_minimal_duplicate_hints()
     {
         await using var a = await HostAsync("A"); await using var b = await HostAsync("B", dispatch: false);

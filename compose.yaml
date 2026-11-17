@@ -22,7 +22,7 @@ services:
     stop_grace_period: 30s
 
   rabbitmq:
-    profiles: ["dev", "messaging"]
+    profiles: ["messaging"]
     image: rabbitmq:4.4.0-management@sha256:af6f50d38098d8bd52fef7f3fa85015dd8b2bf6def58e995bf584ae9ba0f6407
     hostname: orderflow-rabbitmq
     entrypoint: ["/bin/sh", "/usr/local/bin/orderflow-rabbitmq-entrypoint.sh"]
@@ -49,7 +49,7 @@ services:
     stop_grace_period: 30s
 
   mailpit:
-    profiles: ["dev", "email"]
+    profiles: ["email"]
     image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
     environment:
       MP_DATABASE: /data/mailpit.db
@@ -71,7 +71,7 @@ services:
     stop_grace_period: 10s
 
   redis:
-    profiles: ["dev", "realtime"]
+    profiles: ["realtime", "cache"]
     image: redis:8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:

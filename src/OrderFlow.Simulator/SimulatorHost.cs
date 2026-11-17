@@ -7,6 +7,7 @@ using OrderFlow.Application.Common.Time;
 using OrderFlow.Application.Modules.Payments;
 using OrderFlow.Application.Modules.Payments.Simulation;
 using OrderFlow.Application.Persistence;
+using OrderFlow.Application.Observability;
 
 namespace OrderFlow.Simulator;
 
@@ -18,7 +19,11 @@ public static class SimulatorHost
     public static WebApplication Build(string[] args, Action<WebApplicationBuilder>? configure = null)
     {
         var builder = WebApplication.CreateBuilder(args);
+        if (Environment.GetEnvironmentVariable("ORDERFLOW_SETTINGS_FILE") is { Length: > 0 } settingsFile)
+            builder.Configuration.AddJsonFile(settingsFile, optional: false, reloadOnChange: false).AddEnvironmentVariables().AddCommandLine(args);
+        builder.Logging.AddSafeConsole();
         builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<DatabaseReadiness>();
         builder.Services.AddOrderFlowPersistence(builder.Configuration);
         builder.Services.AddScoped<SimulatorService>();
         builder.Services.ConfigureHttpJsonOptions(options =>
@@ -40,7 +45,7 @@ public static class SimulatorHost
         if (keyId.Length is < 1 or > 64 || keyId.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-'))
             throw new InvalidOperationException("Invalid simulator callback key ID.");
         var urls = builder.Configuration["Urls"] ?? "http://127.0.0.1:5090";
-        if (urls.Split(';').Any(url => !Uri.TryCreate(url, UriKind.Absolute, out var uri) || !uri.IsLoopback
+        if (urls.Split(';').Any(url => !Uri.TryCreate(url, UriKind.Absolute, out var uri) || (!uri.IsLoopback && !(builder.Configuration.GetValue("Simulator:AllowContainerNetwork", false) && uri.Host == "0.0.0.0" && uri.Port == 8090))
             || uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo)))
             throw new InvalidOperationException("The simulator must bind only to loopback URLs.");
         // Disallow alternate endpoint configuration that could bypass the loopback URL restriction.
@@ -63,6 +68,7 @@ public static class SimulatorHost
             var control = context.Request.Path.StartsWithSegments("/control");
             var header = control ? "X-Simulator-Control-Key" : "X-Simulator-Key";
             var expected = control ? controlKey : apiKey;
+            if (context.Request.Path == "/health/ready") { await next(context); return; }
             if (!context.Request.Headers.TryGetValue(header, out var supplied) || supplied.Count != 1 || supplied[0] is not { Length: <= 512 } value
                 || !CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(value)), SHA256.HashData(Encoding.UTF8.GetBytes(expected))))
             { context.Response.StatusCode = 401; return; }
@@ -110,6 +116,11 @@ public static class SimulatorHost
             var body = JsonSerializer.Serialize(new { schemaVersion = 1, provider = "Simulator", providerEventId = payment.EventId,
                 occurredAt = payment.UpdatedAt, payment = payment.View() }, GatewayJson.Options);
             return Results.Json(CallbackSigner.Sign(keyId, signingKey, body, BusinessTime.GetUtcNow(clock)));
+        });
+        app.MapGet("/health/ready", async (DatabaseReadiness readiness, CancellationToken token) =>
+        {
+            var ready = await readiness.CheckAsync(token);
+            return Results.Json(new { status = ready ? "Healthy" : "Unhealthy" }, statusCode: ready ? 200 : 503);
         });
         return app;
     }
