@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using OrderFlow.Application.Common.Time;
 using OrderFlow.Application.Modules.Ordering;
 using OrderFlow.Application.Persistence;
+using OrderFlow.Application.Observability;
 
 namespace OrderFlow.Application.Messaging;
 
@@ -46,14 +47,22 @@ public sealed class OutboxPublishingIteration(IServiceScopeFactory scopes, IEven
             await transaction.CommitAsync(cancellationToken);
         }
 
+        using var operation = OrderFlowTelemetry.StartPublication(claimed);
         EventPublishException? failure = null;
         try { await publisher.PublishAsync(claimed, cancellationToken); }
         catch (EventPublishException error)
         {
             failure = error;
+            OrderFlowTelemetry.ProcessingFailed(ProcessingComponent.Outbox,
+                error.Code is "invalid_event_envelope" or "invalid_event_payload" ? FailureKind.InvalidMessage : FailureKind.Dependency);
             logger.LogWarning(new EventId(1801, "OutboxPublishFailed"),
                 "Event {EventId} attempt {AttemptCount} publish failure {Code}; uncertain {Uncertain}",
                 claimed.EventId, claimed.AttemptCount, error.Code, error.Uncertain);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            OrderFlowTelemetry.ProcessingFailed(ProcessingComponent.Outbox, FailureKind.Unexpected);
+            throw;
         }
         // No business transaction exists during network I/O. Completion itself is a guarded SQL write.
         await using (var scope = scopes.CreateAsyncScope())
@@ -81,8 +90,13 @@ public sealed class OutboxPublishingIteration(IServiceScopeFactory scopes, IEven
                     """, cancellationToken);
             }
             if (changed == 0)
+            {
+                OrderFlowTelemetry.ProcessingFailed(ProcessingComponent.Outbox, FailureKind.LeaseLost);
                 logger.LogWarning(new EventId(1802, "OutboxLeaseLost"), "Event {EventId} completion ignored after lease ownership expired/changed", claimed.EventId);
+            }
+            else if (failure is null) operation.Complete();
         }
+        OrderFlowTelemetry.PublicationCompleted(failure is null);
         return true;
     }
 }

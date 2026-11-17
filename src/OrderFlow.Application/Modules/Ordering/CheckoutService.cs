@@ -8,6 +8,7 @@ using OrderFlow.Application.Common.Time;
 using OrderFlow.Application.Modules.Catalog;
 using OrderFlow.Application.Modules.Inventory;
 using OrderFlow.Application.Persistence;
+using OrderFlow.Application.Observability;
 
 namespace OrderFlow.Application.Modules.Ordering;
 
@@ -17,6 +18,7 @@ public sealed class CheckoutService(OrderFlowDbContext database, ICurrentUser cu
 
     public async Task<CheckoutResponse> CreateAsync(string? key, CreateOrderRequest request, CancellationToken cancellationToken)
     {
+        using var operation = OrderFlowTelemetry.Start("checkout.create");
         var userId = currentUser.UserId ?? throw new ApplicationFailureException(ApplicationError.Unauthenticated);
         var validatedKey = CheckoutRequest.ValidateKey(key);
         var normalized = CheckoutRequest.Normalize(request);
@@ -24,7 +26,9 @@ public sealed class CheckoutService(OrderFlowDbContext database, ICurrentUser cu
             throw new ApplicationFailureException(ApplicationError.Unauthenticated);
         try
         {
-            return await CreateOrReplayAsync(userId, validatedKey, normalized, cancellationToken);
+            var response = await CreateOrReplayAsync(userId, validatedKey, normalized, cancellationToken);
+            operation.Complete();
+            return response;
         }
         catch (Exception failure) when (!cancellationToken.IsCancellationRequested && OrderDatabase.Contention(failure) is not null)
         {

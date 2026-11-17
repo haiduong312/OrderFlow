@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics;
+using OrderFlow.Application.Observability;
 
 namespace OrderFlow.Api.Http;
 
@@ -29,6 +30,8 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<Reque
             int? status = aborted ? 499 : completed ? context.Response.StatusCode : null;
             var endpoint = context.GetEndpoint() ?? context.Features.Get<IExceptionHandlerFeature>()?.Endpoint;
             var route = (endpoint as RouteEndpoint)?.RoutePattern.RawText ?? "(unmatched)";
+            if (context.Request.Method == "POST" && route.TrimStart('/') == "api/orders")
+                OrderFlowTelemetry.CheckoutCompleted(start, status ?? 500, aborted);
             // Route template only: never log raw path values, query, headers, cookies or body.
             logger.LogInformation(new EventId(1000, "RequestCompleted"),
                 "HTTP {Method} {Route} finished {Outcome} with {StatusCode}, code {Code}, in {ElapsedMilliseconds}ms; trace {TraceId}",

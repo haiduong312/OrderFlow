@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using OrderFlow.Application.Common.Time;
 using OrderFlow.Application.Persistence;
+using OrderFlow.Application.Observability;
 
 namespace OrderFlow.Application.Modules.Ordering;
 
@@ -22,6 +23,7 @@ public sealed class OrderExpiryProcessor(OrderFlowDbContext database, TimeProvid
             """).AsNoTracking().ToListAsync(cancellationToken);
         if (candidates.Count == 0) return false;
         var order = candidates[0];
+        using var operation = OrderFlowTelemetry.Start("reservations.expire");
         database.Attach(order);
         // Recheck the fresh locked state using decision time AFTER acquiring the order lock.
         var now = BusinessTime.GetUtcNow(clock);
@@ -32,6 +34,8 @@ public sealed class OrderExpiryProcessor(OrderFlowDbContext database, TimeProvid
         database.OutboxMessages.Add(OrderEvents.Create(order, "ordering.order-expired", now, Guid.NewGuid()));
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        OrderFlowTelemetry.ReservationExpired(order.ExpiresAt, now);
+        operation.Complete();
         return true;
     }
 }

@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using OrderFlow.Application.Messaging;
 using OrderFlow.Application.Modules.Notifications;
 using OrderFlow.Application.Persistence;
+using System.Diagnostics;
+using OrderFlow.Application.Observability;
 
 namespace OrderFlow.Api.Realtime;
 
@@ -14,6 +16,7 @@ public sealed class NotificationRealtimeDispatcher(IServiceScopeFactory scopes, 
     public async Task DispatchAsync(ReadOnlyMemory<byte> bytes, string? messageId, string? messageType, string? contentType, CancellationToken token)
     {
         var e = Parse(bytes, messageId, messageType, contentType);
+        using var operation = OrderFlowTelemetry.StartMessage("realtime.dispatch", ActivityKind.Consumer, e.TraceParent, e.TraceState, e.EventId, e.CorrelationId);
         Guid recipient; NotificationHint hint;
         // This scope ends before Redis/SignalR network I/O. Stored data determines every destination.
         await using (var scope = scopes.CreateAsyncScope())
@@ -28,9 +31,10 @@ public sealed class NotificationRealtimeDispatcher(IServiceScopeFactory scopes, 
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(token); budget.CancelAfter(TimeSpan.FromSeconds(5));
         // Dispatch completion is never a durable client acknowledgement. Redis can lose hints on failure/reconnect.
         await hub.Clients.User(recipient.ToString("D")).SendAsync("NotificationAvailable", hint, budget.Token).WaitAsync(budget.Token);
+        operation.Complete();
     }
     private sealed record CreatedEvent(Guid EventId, Guid NotificationId, Guid RecipientUserId, Guid SourceEventId,
-        Guid OrderId, string? Type, DateTimeOffset CreatedAt);
+        Guid OrderId, string? Type, DateTimeOffset CreatedAt, Guid CorrelationId, string? TraceParent, string? TraceState);
     private static CreatedEvent Parse(ReadOnlyMemory<byte> bytes, string? messageId, string? messageType, string? contentType)
     {
         if (bytes.Length is < 1 or > 65536 || contentType != "application/json") throw new NotificationMessageException("realtime_invalid_body");
@@ -42,14 +46,15 @@ public sealed class NotificationRealtimeDispatcher(IServiceScopeFactory scopes, 
             if (e.EnvelopeVersion != 1 || e.SchemaVersion != 1 || e.EventType != "notifications.notification-created" || messageType != e.EventType
                 || e.Producer != "Notifications" || e.AggregateType != "Notification" || e.AggregateVersion != 1
                 || e.EventId == Guid.Empty || !Guid.TryParseExact(messageId, "D", out var id) || id != e.EventId || e.AggregateId == Guid.Empty
-                || e.CorrelationId == Guid.Empty || e.CausationId == Guid.Empty || e.Data.ValueKind != JsonValueKind.Object)
+                || e.CorrelationId == Guid.Empty || e.CausationId == Guid.Empty || e.Data.ValueKind != JsonValueKind.Object
+                || e.TraceState?.Length > 512 || e.TraceParent is not null && !ActivityContext.TryParse(e.TraceParent, e.TraceState, out _))
                 throw new NotificationMessageException("realtime_unsupported_or_invalid_envelope");
             var data = e.Data;
             if (data.GetProperty("notificationId").GetGuid() != e.AggregateId || data.GetProperty("sourceEventId").GetGuid() != e.CausationId
                 || data.GetProperty("createdAt").GetDateTimeOffset() != e.OccurredAt)
                 throw new NotificationMessageException("realtime_invalid_notification_identity");
             return new(e.EventId, e.AggregateId, data.GetProperty("recipientUserId").GetGuid(), e.CausationId,
-                data.GetProperty("orderId").GetGuid(), data.GetProperty("type").GetString(), e.OccurredAt);
+                data.GetProperty("orderId").GetGuid(), data.GetProperty("type").GetString(), e.OccurredAt, e.CorrelationId, e.TraceParent, e.TraceState);
         }
         catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or FormatException or DecoderFallbackException)
         { throw new NotificationMessageException("realtime_malformed_payload"); }

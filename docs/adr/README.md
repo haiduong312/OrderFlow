@@ -45,4 +45,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-030](0030-admin-workspace.md) | Admin management/report/audit views, targeted invalidation and same-identity stock/email recovery |
 
+| [ADR-031](0031-opentelemetry-and-readiness.md) | Optional OpenTelemetry, durable event trace lineage, safe structured logs/metrics and intentional API/Worker readiness |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

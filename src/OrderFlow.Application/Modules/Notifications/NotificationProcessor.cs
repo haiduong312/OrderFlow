@@ -6,6 +6,8 @@ using OrderFlow.Application.Messaging;
 using OrderFlow.Application.Modules.Emails;
 using OrderFlow.Application.Modules.Ordering;
 using OrderFlow.Application.Persistence;
+using OrderFlow.Application.Observability;
+using System.Diagnostics;
 
 namespace OrderFlow.Application.Modules.Notifications;
 
@@ -15,6 +17,8 @@ public sealed class NotificationProcessor(OrderFlowDbContext database, TimeProvi
     public async Task ProcessAsync(OrderNotificationEvent message, CancellationToken cancellationToken)
     {
         var e = message.Envelope;
+        using var operation = OrderFlowTelemetry.StartMessage("notifications.handle", ActivityKind.Consumer,
+            e.TraceParent, e.TraceState, e.EventId, e.CorrelationId);
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         await OrderDatabase.SetTimeoutsAsync(database, cancellationToken);
         var now = BusinessTime.GetUtcNow(clock);
@@ -37,6 +41,7 @@ public sealed class NotificationProcessor(OrderFlowDbContext database, TimeProvi
         if (inbox.Status == InboxStatus.Processed)
         {
             await transaction.CommitAsync(cancellationToken);
+            operation.Complete();
             return;
         }
         if (inbox.Status != InboxStatus.Pending) throw new NotificationMessageException("notification_inbox_state_conflict");
@@ -57,7 +62,8 @@ public sealed class NotificationProcessor(OrderFlowDbContext database, TimeProvi
         {
             EventId = Guid.NewGuid(), EventType = "notifications.notification-created", SchemaVersion = 1, Producer = "Notifications",
             AggregateType = "Notification", AggregateId = notification.Id, AggregateVersion = 1,
-            CorrelationId = e.CorrelationId, CausationId = e.EventId, TraceParent = e.TraceParent, TraceState = e.TraceState,
+            CorrelationId = e.CorrelationId, CausationId = e.EventId,
+            TraceParent = operation.Id ?? e.TraceParent, TraceState = operation.TraceState ?? e.TraceState,
             OccurredAt = now, NextAttemptAt = now,
             Payload = JsonSerializer.Serialize(new { notificationId = notification.Id, notification.RecipientUserId,
                 notification.SourceEventId, notification.Type, notification.OrderId, notification.CreatedAt }, Json)
@@ -80,6 +86,7 @@ public sealed class NotificationProcessor(OrderFlowDbContext database, TimeProvi
         inbox.Status = InboxStatus.Processed; inbox.ProcessedAt = now; inbox.AttemptCount = 1;
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        operation.Complete();
         // The RabbitMQ adapter ACKs only after this method returns from commit.
     }
 }

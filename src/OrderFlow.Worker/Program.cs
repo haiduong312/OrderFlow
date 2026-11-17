@@ -2,10 +2,26 @@ using OrderFlow.Worker;
 using OrderFlow.Application.Persistence;
 using OrderFlow.Application.Modules.Identity;
 using Microsoft.AspNetCore.Identity;
+using OrderFlow.Application.Observability;
+using System.Text.Json;
 
 var seedAccount = args is ["seed-development-account"];
 var seed = args is ["seed-development"] || seedAccount;
-using var host = WorkerHost.Build(seed ? [] : args, runBackgroundJobs: !seed);
+var readiness = args is ["check-readiness"];
+using var host = WorkerHost.Build(seed || readiness ? [] : args, runBackgroundJobs: !seed && !readiness);
+if (readiness)
+{
+    await host.StartAsync();
+    try
+    {
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var report = await host.Services.GetRequiredService<IRuntimeReadiness>().CheckAsync(budget.Token);
+        Console.WriteLine(JsonSerializer.Serialize(report));
+        Environment.ExitCode = report.Ready ? 0 : 1;
+    }
+    finally { await host.StopAsync(); }
+    return;
+}
 if (seed)
 {
     if (!host.Services.GetRequiredService<IHostEnvironment>().IsDevelopment())

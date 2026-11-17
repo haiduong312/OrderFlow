@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using OrderFlow.Application.Common.Time;
 using OrderFlow.Application.Modules.Ordering;
 using OrderFlow.Application.Persistence;
+using OrderFlow.Application.Observability;
 
 namespace OrderFlow.Application.Modules.Emails;
 
@@ -43,6 +44,7 @@ public sealed class EmailSendingIteration(IServiceScopeFactory scopes, IEmailGat
             await db.SaveChangesAsync(token); await transaction.CommitAsync(token);
         }
 
+        using var operation = OrderFlowTelemetry.Start("email.deliver");
         EmailGatewayResult? result = null; EmailGatewayException? failure = null;
         try
         {
@@ -74,6 +76,7 @@ public sealed class EmailSendingIteration(IServiceScopeFactory scopes, IEmailGat
                 claimed.Id, claimed.AttemptCount, error.Code, previouslyUncertain || error.Uncertain);
         }
         var sent = failure is null && result?.State == EmailProviderState.Sent;
+        if (!sent) OrderFlowTelemetry.ProcessingFailed(ProcessingComponent.Email, FailureKind.Dependency);
         var retryable = failure?.Retryable ?? result?.State == EmailProviderState.Pending;
         var uncertain = !sent && (previouslyUncertain || failure?.Uncertain == true || result?.State == EmailProviderState.Pending);
         var errorCode = failure?.Code ?? (result?.State == EmailProviderState.Rejected ? "email_provider_rejected" : "email_provider_pending");
@@ -93,7 +96,12 @@ public sealed class EmailSendingIteration(IServiceScopeFactory scopes, IEmailGat
                     "LeaseOwner"=NULL,"LeaseToken"=NULL,"LeaseExpiresAt"=NULL
                 WHERE "Id"={claimed.Id} AND "Status"='InFlight' AND "LeaseOwner"={owner} AND "LeaseToken"={lease} AND "LeaseExpiresAt">{now}
                 """, token);
-            if (changed == 0) logger.LogWarning(new EventId(2002, "EmailLeaseLost"), "Email delivery {DeliveryId} result ignored after lease changed/expired", claimed.Id);
+            if (changed == 0)
+            {
+                OrderFlowTelemetry.ProcessingFailed(ProcessingComponent.Email, FailureKind.LeaseLost);
+                logger.LogWarning(new EventId(2002, "EmailLeaseLost"), "Email delivery {DeliveryId} result ignored after lease changed/expired", claimed.Id);
+            }
+            else if (sent) operation.Complete();
         }
         return true;
     }

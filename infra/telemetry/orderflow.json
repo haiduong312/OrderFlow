@@ -1,0 +1,514 @@
+{
+  "uid": "orderflow-operations",
+  "title": "OrderFlow \u2014 operations",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "timezone": "utc",
+  "tags": [
+    "orderflow",
+    "local-development"
+  ],
+  "refresh": "10s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Checkout p95 latency",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(orderflow_checkout_duration_seconds_bucket[5m])))",
+          "legendFormat": "Checkout p95 latency",
+          "interval": "1s"
+        }
+      ],
+      "description": "Whole POST /api/orders duration, including rejected/auth/CSRF/replayed requests. No observations means no data, not zero.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 2,
+      "title": "Checkout outcomes / second",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(orderflow_checkout_requests_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "interval": "1s"
+        }
+      ],
+      "description": "success, rejected (4xx), server_error (5xx), cancelled. Disabled UI is not counted as an HTTP request.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 3,
+      "title": "Checkout server error fraction",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(orderflow_checkout_requests_total{outcome=\"server_error\"}[5m])) / sum(rate(orderflow_checkout_requests_total[5m]))",
+          "legendFormat": "Checkout server error fraction",
+          "interval": "1s"
+        }
+      ],
+      "description": "Example investigation threshold >1% for 5m with sufficient traffic; not an SLO/production guarantee. Zero traffic leaves no ratio.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 4,
+      "title": "Message processing failures",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (component,kind) (increase(orderflow_processing_failures_total[5m]))",
+          "legendFormat": "{{component}} / {{kind}}",
+          "interval": "1s"
+        }
+      ],
+      "description": "Failures by four fixed components and four fixed classes. Retries can increment more than once for one durable event.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 5,
+      "title": "Outbox undelivered and failed",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(max_over_time(orderflow_outbox_pending[1m]))",
+          "legendFormat": "Undelivered",
+          "interval": "1s"
+        },
+        {
+          "refId": "B",
+          "expr": "max(max_over_time(orderflow_outbox_failed[1m]))",
+          "legendFormat": "Failed",
+          "interval": "1s"
+        }
+      ],
+      "description": "Pending includes Pending + InFlight, including retry/lease wait. Failed is terminal review. MAX, not SUM, because API/worker can observe the same database. One-minute rolling maxima keep short backlogs visible; the chart drains one minute after the raw gauge.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 6,
+      "title": "Oldest undelivered event age",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(max_over_time(orderflow_outbox_oldest_age_seconds[1m]))",
+          "legendFormat": "Oldest undelivered event age",
+          "interval": "1s"
+        }
+      ],
+      "description": "OccurredAt to sampler observation. Includes deliberate retry delay. Example >60s for 5m warrants investigation. Displayed as a one-minute rolling maximum.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 7,
+      "title": "Due reservation expiry work",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(orderflow_expiry_due)",
+          "legendFormat": "Due reservation expiry work",
+          "interval": "1s"
+        }
+      ],
+      "description": "Due PendingPayment orders at equality or after ExpiresAt. One order can contain multiple reservations.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 8,
+      "title": "Oldest overdue reservation lag",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(orderflow_expiry_oldest_lag_seconds)",
+          "legendFormat": "Oldest overdue reservation lag",
+          "interval": "1s"
+        }
+      ],
+      "description": "Current unprocessed expiry lag; example >30s for 5m. Completed expiry histogram is separate.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 9,
+      "title": "Completed expiry lag p95",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(orderflow_reservation_expiry_lag_seconds_bucket[5m])))",
+          "legendFormat": "Completed expiry lag p95",
+          "interval": "1s"
+        }
+      ],
+      "description": "Measured after successful commit at locked decision time, clamped nonnegative. No fake-time sleep is required.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 10,
+      "title": "Refund work awaiting confirmation/review",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (__name__) ({__name__=~\"orderflow_refunds_pending|orderflow_refunds_review\"})",
+          "legendFormat": "{{__name__}}",
+          "interval": "1s"
+        }
+      ],
+      "description": "Pending includes leased/uncertain and scheduled retry. Succeeded is excluded. NeedsReview is separate; never infer a successful refund from retries.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 11,
+      "title": "Snapshot age and sample success",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (__name__) ({__name__=~\"orderflow_telemetry_snapshot_age_seconds|orderflow_telemetry_sample_success\"})",
+          "legendFormat": "{{__name__}}",
+          "interval": "1s"
+        }
+      ],
+      "description": "A failed sample keeps old data, success=0 and increasing age. Investigate age >2 sampling intervals or any success=0; dashboards can become stale during exporter outage.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    },
+    {
+      "id": 12,
+      "title": "Dependency readiness",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min by (job,dependency) (orderflow_dependency_ready)",
+          "legendFormat": "{{job}} / {{dependency}}",
+          "interval": "1s"
+        }
+      ],
+      "description": "API: PostgreSQL/schema only. Worker additionally checks RabbitMQ and SMTP when their jobs are enabled. SMTP TCP reachability does not prove delivery.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "maxDataPoints": 1800
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "Traces: search service.name and checkout.create / outbox.publish / notifications.handle",
+      "type": "link",
+      "url": "/explore",
+      "targetBlank": false
+    }
+  ]
+}

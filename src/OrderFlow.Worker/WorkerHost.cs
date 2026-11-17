@@ -6,6 +6,7 @@ using OrderFlow.Application.Modules.Emails;
 using OrderFlow.Worker.Emails;
 using OrderFlow.Application.Modules.Notifications;
 using OrderFlow.Worker.Messaging;
+using OrderFlow.Application.Observability;
 
 namespace OrderFlow.Worker;
 
@@ -14,9 +15,13 @@ public static class WorkerHost
     public static IHost Build(string[] args, Action<HostApplicationBuilder>? configure = null, bool runBackgroundJobs = true)
     {
         var builder = Host.CreateApplicationBuilder(args);
+        builder.Logging.AddSafeConsole();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddOrderFlowPersistence(builder.Configuration);
         configure?.Invoke(builder);
+        builder.Services.AddSingleton<DatabaseReadiness>();
+        builder.Services.AddSingleton<IRuntimeReadiness, WorkerReadiness>();
+        builder.Services.AddOrderFlowTelemetry(builder.Configuration, builder.Logging, "orderflow-worker");
         builder.Services.AddOptions<OrderExpiryOptions>().Bind(builder.Configuration.GetSection("OrderExpiry"))
             .Validate(options => options.BatchSize is >= 1 and <= 100, "OrderExpiry:BatchSize must be 1–100.")
             .Validate(options => options.PollIntervalSeconds is >= 1 and <= 300, "OrderExpiry:PollIntervalSeconds must be 1–300.")
