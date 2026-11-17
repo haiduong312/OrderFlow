@@ -19,6 +19,7 @@ trap cleanup EXIT
 "${compose[@]}" up -d --wait --wait-timeout 120 postgres rabbitmq redis
 "${compose[@]}" run --rm migrate
 "${compose[@]}" run --rm bootstrap-admin
+"${compose[@]}" run --rm initialize-keys
 "${compose[@]}" up -d --wait --wait-timeout 150 api1 api2 worker1 worker2 proxy
 ORDERFLOW_DEPLOYMENT_VERIFY_CONFIG="$verification_directory" dotnet test tests/OrderFlow.IntegrationTests \
   -c Release --filter 'FullyQualifiedName~DeploymentProfileTests' --logger 'console;verbosity=normal'

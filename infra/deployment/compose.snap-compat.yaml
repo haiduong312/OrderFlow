@@ -8,4 +8,5 @@ services:
   proxy: { security_opt: !override [no-new-privileges:false] }
   migrate: { security_opt: !override [no-new-privileges:false] }
   bootstrap-admin: { security_opt: !override [no-new-privileges:false] }
+  initialize-keys: { security_opt: !override [no-new-privileges:false] }
   simulator: { security_opt: !override [no-new-privileges:false] }

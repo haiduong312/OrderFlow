@@ -41,6 +41,8 @@ jobs:
         run: python3 -m unittest discover -s infra/ci -p 'test_*.py'
       - name: Verify disposable-load guards and measurement report privacy (no load execution)
         run: python3 -m unittest discover -s infra/load -p 'test_*.py'
+      - name: Verify demo target safety and pending-operation recovery
+        run: python3 -m unittest discover -s infra/demo -p 'test_*.py'
       - name: Focused service-free unit tests
         run: bash infra/ci/test-backend.sh unit
       - name: PostgreSQL and delivery integration tests (disposable Testcontainers)

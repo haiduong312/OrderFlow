@@ -197,6 +197,17 @@ services:
     security_opt: [no-new-privileges:true]
     depends_on: { postgres: { condition: service_healthy } }
     networks: [backend]
+  initialize-keys:
+    <<: *api
+    profiles: [tools]
+    command: [initialize-deployment-keys]
+    environment:
+      <<: *api-env
+      Deployment__InstanceName: key-init
+      Realtime__Enabled: "false"
+      CatalogCache__Enabled: "false"
+    restart: "no"
+    healthcheck: { disable: true }
   simulator:
     profiles: [demo]
     image: ${COMPOSE_PROJECT_NAME:-orderflow-deployment}-simulator:local

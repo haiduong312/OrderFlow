@@ -16,6 +16,8 @@ dc=(docker compose -f compose.deploy.yaml --env-file .local/deployment/deploymen
 "${dc[@]}" run --rm migrate
 # Optional local demonstration account; generated password is not printed or reset.
 "${dc[@]}" run --rm bootstrap-admin
+# Materialize and verify the shared encrypted key ring before either cold API reader.
+"${dc[@]}" run --rm initialize-keys
 "${dc[@]}" up -d --wait --wait-timeout 150 api1 api2 worker1 worker2 proxy
 curl --cacert .local/deployment/tls.crt https://localhost:8443/api/health/ready
 "${dc[@]}" ps
@@ -91,3 +93,6 @@ On exit script stops/removes **only its own** containers/network with Compose do
 ## Empty key-ring startup observation
 
 The later [failure/load rehearsal](load-testing.md) observed alternating auth401/antiforgery400 on an initially empty shared key volume despite correct mounts/application identity/certificate. Recycling both readers after anonymous key materialization made the session portable, and the lab now verifies authenticated access on both nodes before seeding/load. The precise framework timing cause is unproven. Initialize and verify an empty shared key ring before admitting browser traffic; sharing PostgreSQL or merely mounting keys is not evidence that every cold reader has synchronized. This lab prerequisite does not promise safe arbitrary concurrent cold bootstrap in production. Existing established-ring restart acceptance remains separate; ordinary API affinity was not changed to hide the issue.
+
+
+The final audit adds the explicit `initialize-keys` tool above and to `verify.sh`/the load harness, superseding the earlier load-only anonymous-materialization/recycle workaround. It runs without an HTTP listener/background services, verifies Protect/Unprotect using supported Data Protection APIs and retains the established ring on repeat invocation. Run it once serially before fresh API replicas; preserve the ring/certificate and verify real sessions across nodes. This narrows the local cold-bootstrap gap without claiming a proven framework root cause or live multi-host rotation. The [portfolio quick start/demo](demo.md) wraps these phases with safe synthetic fixtures.

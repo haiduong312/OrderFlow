@@ -20,6 +20,18 @@ public sealed class DeploymentHostingSettings
 
 public static class DeploymentHosting
 {
+    // Explicit single operator step BEFORE cold replicas start; no session/cookie or HTTP server.
+    // Reuse the configured encrypted repository/application identity; never export key material.
+    public static void InitializeKeyRing(IServiceProvider services)
+    {
+        if (!services.GetRequiredService<IConfiguration>().GetValue<bool>("Deployment:Enabled"))
+            throw new InvalidOperationException("Key initialization requires explicit Deployment:Enabled and protected shared storage.");
+        var protector = services.GetRequiredService<IDataProtectionProvider>().CreateProtector("OrderFlow.KeyRingBootstrap.v1");
+        const string probe = "OrderFlow key-ring verification";
+        if (protector.Unprotect(protector.Protect(probe)) != probe)
+            throw new InvalidOperationException("The shared key ring could not be verified.");
+    }
+
     public static DeploymentHostingSettings AddDeploymentHosting(this IServiceCollection services, IConfiguration configuration)
     {
         var settings = configuration.GetSection("Deployment").Get<DeploymentHostingSettings>() ?? new();

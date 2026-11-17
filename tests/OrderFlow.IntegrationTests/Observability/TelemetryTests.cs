@@ -109,10 +109,13 @@ public sealed class TelemetryTests(PostgresServer server, RabbitMqServer broker,
         clock.Advance(TimeSpan.FromSeconds(5));
         var acknowledged=new DeliveryLog<NotificationDeliveryHandler>(2);
         var handler=new NotificationDeliveryHandler(scopes,new CombinedLog<NotificationDeliveryHandler>(services.GetRequiredService<ILogger<NotificationDeliveryHandler>>(),acknowledged));
-        await using var subscription=await NotificationConsumerSubscription.StartAsync(settings,new(){Prefetch=1},settings.NotificationQueue,handler,default);
         await using var publisher=new RabbitMqEventPublisher(settings);
         var iteration=new OutboxPublishingIteration(scopes,publisher,clock,services.GetRequiredService<ILogger<OutboxPublishingIteration>>());
+        // Publish both source events before admitting the consumer. Otherwise its first child
+        // can tie the retried source's NextAttemptAt and win EventId ordering, so two publisher
+        // calls need not deliver two orders. Durable broker queues buffer these real deliveries.
         Assert.True(await iteration.ProcessNextAsync(default)); Assert.True(await iteration.ProcessNextAsync(default));
+        await using var subscription=await NotificationConsumerSubscription.StartAsync(settings,new(){Prefetch=1},settings.NotificationQueue,handler,default);
         await acknowledged.Acknowledged.Task.WaitAsync(TimeSpan.FromSeconds(15));
         Assert.True(await iteration.ProcessNextAsync(default)); Assert.True(await iteration.ProcessNextAsync(default));
         await metrics.SampleAsync(scopes,default); Assert.Equal(0,metrics.Snapshot!.OutboxPending); Assert.Equal(0,metrics.Snapshot.OutboxOldestAge);

@@ -22,6 +22,13 @@ public class Program
 {
     public static async Task Main(string[] args)
     {
+        if (args is ["initialize-deployment-keys"])
+        {
+            await using var bootstrap = Build([]);
+            DeploymentHosting.InitializeKeyRing(bootstrap.Services);
+            Console.WriteLine("Shared deployment key ring initialized and verified; no HTTP listener started.");
+            return;
+        }
         if (args is ["healthcheck"])
         {
             try

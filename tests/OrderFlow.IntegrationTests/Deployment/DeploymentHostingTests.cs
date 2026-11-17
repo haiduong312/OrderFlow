@@ -39,10 +39,35 @@ public sealed class DeploymentHostingTests : IDisposable
     }
     private static ServiceProvider Provider(IConfiguration configuration)
     {
-        var services = new ServiceCollection(); services.AddLogging(); services.AddDeploymentHosting(configuration);
+        var services = new ServiceCollection(); services.AddLogging(); services.AddSingleton(configuration); services.AddDeploymentHosting(configuration);
         var provider = services.BuildServiceProvider();
         _ = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().ToArray();
         return provider;
+    }
+
+    [Fact]
+    public void Explicit_bootstrap_creates_one_encrypted_ring_before_independent_replica_readers()
+    {
+        var config = Configuration();
+        using (var initializer = Provider(config))
+        {
+            DeploymentHosting.InitializeKeyRing(initializer);
+            DeploymentHosting.InitializeKeyRing(initializer);
+        }
+        Assert.Single(Directory.GetFiles(Path.Combine(root, "keys"), "key-*.xml"));
+        using var first = Provider(config); using var second = Provider(config);
+        var a = first.GetRequiredService<IDataProtectionProvider>().CreateProtector("cookie-fixture");
+        var b = second.GetRequiredService<IDataProtectionProvider>().CreateProtector("cookie-fixture");
+        Parallel.For(0, 16, _ =>
+        {
+            Assert.Equal("first-session", b.Unprotect(a.Protect("first-session")));
+            Assert.Equal("second-session", a.Unprotect(b.Protect("second-session")));
+        });
+        var xml = File.ReadAllText(Assert.Single(Directory.GetFiles(Path.Combine(root, "keys"), "key-*.xml")));
+        Assert.Contains("encryptedSecret", xml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<masterKey", xml, StringComparison.Ordinal);
+        config["Deployment:Enabled"] = "false";
+        Assert.Throws<InvalidOperationException>(() => DeploymentHosting.InitializeKeyRing(first));
     }
 
     [Fact]

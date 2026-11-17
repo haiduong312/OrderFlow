@@ -53,4 +53,6 @@ Records below are accepted design decisions; each record supplies its decision d
 
 | [ADR-034](0034-disposable-failure-and-load-lab.md) | Bounded disposable k6/fault scenarios, predefined invariants, explicit cache conditions and honest local measurements |
 
+| [ADR-035](0035-acceptance-audit-and-portfolio-handoff.md) | Honest acceptance audit, explicit protected key bootstrap, executable portfolio demo and claim-to-evidence handoff |
+
 The [specification](../project-spec.md) defines observable behavior; [architecture](../architecture.md) defines implementation boundaries. If these disagree, report the conflict before implementing the affected behavior, then update the contract and relevant ADR together.

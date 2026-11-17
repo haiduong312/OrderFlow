@@ -1,6 +1,6 @@
 # OrderFlow v1 — implementation contract
 
-Baseline: 2026-10-30. Milestone 01 is documentation only. Statements below describe required future behavior, not implemented features. See [implementation status](implementation-status.md), [architecture](architecture.md), and [ADRs](adr/README.md).
+Baseline: 2026-10-30; audited 2026-11-17. This is the required contract, not a blanket implementation claim. Initial inspection/delivery notes are historical; later ADRs and the current acceptance audit identify implemented behavior and outstanding obligations. See [acceptance audit](acceptance-audit.md), [implementation status](implementation-status.md), [architecture](architecture.md), and [ADRs](adr/README.md).
 
 ## 1. Purpose and scope
 
@@ -14,9 +14,9 @@ If later instructions contradict this contract, report the conflict before chang
 
 Milestone 03 implements shared PostgreSQL/Identity storage; milestone 04 adds browser authentication described in [authentication](authentication.md) and [ADR-010](adr/0010-identity-cookie-authentication.md). Per the latest scope instruction, auth endpoints move to 04 and React setup to 05. ADR-009 generalizes the planned command-response tables into shared IdempotencyRecords without changing replay/ownership behavior; [persistence guide](persistence.md) documents the actual schema and dedicated migration/seed/data-lifetime steps. Later milestones still implement command replay, dispatch, lease coordination and business entities.
 
-Milestone 12 now implements idempotent checkout and owner-constrained detail reads with the required Order/OrderItems/OrderHistory and Active InventoryReservations prerequisites from 09–11/13. See the [checkout transaction guide](checkout.md). That checkout milestone originally deferred lifecycle work; milestone 13 now adds release/cancel/listing and Admin fulfillment as described below. Consumption, payment and automatic expiry remain unimplemented.
+Milestone 12 now implements idempotent checkout and owner-constrained detail reads with the required Order/OrderItems/OrderHistory and Active InventoryReservations prerequisites from 09–11/13. See the [checkout transaction guide](checkout.md). That checkout milestone originally deferred lifecycle work; milestone 13 now adds release/cancel/listing and Admin fulfillment as described below. This historical checkout slice deferred consumption/payment/expiry; all three now ship in later sections/ADRs, with exact limits in the current audit.
 
-Milestone 13 now implements owner list/detail/cancellation, safe cancellation-triggered expiry/release and the requested Admin list/detail/forward fulfillment portion of 19. [Order management](orders.md) and [ADR-016](adr/0016-order-management-transitions.md) define the shipped expiry metadata, renamed OrderStatusHistory and transaction flow. Verified capture/consumption and automatic expiry/dispatch remain later milestones.
+Milestone 13 now implements owner list/detail/cancellation, safe cancellation-triggered expiry/release and the requested Admin list/detail/forward fulfillment portion of 19. [Order management](orders.md) and [ADR-016](adr/0016-order-management-transitions.md) define the shipped expiry metadata, renamed OrderStatusHistory and transaction flow. This historical order-management slice deferred capture/consumption/expiry/dispatch; later milestones below now implement those flows.
 
 ## 2. Actors, ownership, and product boundaries
 
@@ -24,8 +24,8 @@ Milestone 13 now implements owner list/detail/cancellation, safe cancellation-tr
 | --- | --- |
 | Anonymous | Read active catalog; register as Customer; log in; obtain antiforgery token; health checks |
 | Customer | Manage own session; create orders; list/read own orders and payment/refund summaries; request payment; cancel own eligible orders |
-| Admin | Manage catalog and stock; inspect all orders; advance fulfillment; read reporting and operational failures |
-| Worker | Expire reservations, submit/reconcile payments and refunds, dispatch durable events, update notifications/reporting through application services |
+| Admin | Manage catalog and stock; inspect all orders; advance fulfillment; read reporting, payment/refund audit and email failure metadata; generic operational failure endpoint is deferred |
+| Worker | Expire reservations, submit/reconcile payments and refunds, dispatch durable events, update notifications through application services; reporting is direct PostgreSQL reads under ADR-026 |
 | Simulator callback | Signed provider authentication only; record a provider event; never use a browser cookie as authority |
 
 Registration never accepts roles. Provision the initial Admin through an explicit operator bootstrap using external secrets; no default password or public role-assignment endpoint. Authorization checks run on the server and constrain database queries. Customer access to another user's order, attempt, or refund returns 404; missing authentication returns 401; missing endpoint role returns 403. Admin access uses explicit `/admin` endpoints and does not bypass Customer endpoint ownership checks. An Admin is not implicitly a Customer. Milestone 06 supplies reusable policies/handlers and ICurrentUser; [authorization.md](authorization.md) defines the implemented denial matrix and integration obligations. Orders/admin features must still integrate owner-constrained queries and actual business rules.
@@ -140,12 +140,13 @@ All paths below are under `/api`. Browser POST/PUT/PATCH/DELETE endpoints, inclu
 | GET `/admin/products/{id}/stock-history` | Admin | Paginated append-only stock/reservation history |
 | POST `/orders` | Customer + CSRF | Items and Idempotency-Key; 201 original order snapshot + Location |
 | GET `/orders` | Customer | Paginated own orders; optional state filter |
-| GET `/orders/{id}` | Owning Customer | Current order/items/version/status history and effective-expiry metadata; payment/refund summaries arrive with their features |
+| GET `/orders/{id}` | Owning Customer | Current order/items/version/history/effective-expiry metadata; financial summaries use the separate payment-status route |
 | POST `/orders/{id}/cancel` | Owning Customer + CSRF | Empty body; 200 current Cancelled order; expiry/state conflict 409 |
 | POST `/orders/{id}/payment-attempts` | Owning Customer + CSRF | Empty body + Idempotency-Key; 202 persisted attempt + Location |
-| GET `/orders/{id}/payment-attempts/{attemptId}` | Owning Customer | Current attempt, capture/refund summaries; no provider secrets |
+| GET `/orders/{id}/payment-attempts/{attemptId}` | Owning Customer | Current attempt status/amount/attention metadata; no provider secrets; financial summary is separate |
+| GET `/orders/{id}/payment-status` | Owning Customer | Bounded read-only snapshot of current attempts/captures/refunds; observedAt; no provider secrets |
 | GET `/admin/orders` | Admin | Paginated all orders, state/customer filters |
-| GET `/admin/orders/{id}` | Admin | Current order/items/OrderStatusHistory and effective-expiry metadata; payment/refund summaries remain future |
+| GET `/admin/orders/{id}` | Admin | Current order/items/OrderStatusHistory/expiry metadata; separate Admin audit routes expose safe financial summaries |
 | POST `/admin/orders/{id}/transitions` | Admin + CSRF | targetStatus + expectedVersion; 200 current order |
 | POST `/payments/simulator/callback` | Signed provider only, CSRF exempt | Authenticated event; 202 after durable inbox receipt, also for exact duplicate |
 | GET `/notifications` | Authenticated | Own paginated notifications; optional unreadOnly |
@@ -163,7 +164,7 @@ All paths below are under `/api`. Browser POST/PUT/PATCH/DELETE endpoints, inclu
 | GET `/admin/audit/orders/{id}/captures` | Admin | UTC-ranged, paginated local capture/allocation metadata |
 | GET `/admin/audit/orders/{id}/refunds` | Admin | UTC-ranged, paginated safe current refund states |
 | GET `/admin/audit/stock-movements` | Admin | UTC-ranged, paginated immutable movements, optional order/product filters |
-| GET `/admin/operations/failures` | Admin | Bounded list of failed/quarantined jobs and sanitized error codes |
+| GET `/admin/operations/failures` | **Deferred, not mapped** | Required generic operational list remains incomplete; current implementation has email failure metadata and per-order audit only |
 | GET `/health/live` | Anonymous | Process liveness only; no sensitive detail |
 | GET `/health/ready` | Anonymous | Database/schema readiness; worker readiness also exposed by worker's internal health mechanism |
 
@@ -177,7 +178,7 @@ Errors use Problem Details with stable `code`, `traceId`, and validation fields 
 
 ## 7. Consistency and durable messaging
 
-Checkout, stock changes, cancellation, expiry, and accepted-capture confirmation are strongly consistent inside PostgreSQL transactions. They include state/history and an outbox event. No payment, refund, HTTP, email, or reporting network call occurs while a business transaction is open. Database-only module collaboration within the same unit of work is allowed.
+Checkout, stock changes, cancellation, expiry, and accepted-capture confirmation are strongly consistent inside PostgreSQL transactions. Order-related transactions include state/history and an outbox event. Standalone stock receipt/adjustment currently commits balance+ledger without an inventory integration event; that original stock-event obligation remains incomplete (A16), as recorded in the audit. No payment, refund, HTTP, email, or reporting network call occurs while a business transaction is open. Database-only module collaboration within the same unit of work is allowed.
 
 Outbox dispatch, provider submission/reconciliation, callback processing after durable receipt, refunds and notifications are eventual. `202` is durable acceptance, not successful payment/refund. A temporarily stopped worker delays expiry/release, capture processing, refunds and notifications; it cannot allow an overdue confirmation. Reporting/notification failure cannot roll back checkout. GET order is authoritative for order state. Per ADR-026, reporting now reads authoritative committed rows in a per-response Repeatable Read/read-only snapshot with observedAt; it has no reporting consumer/projection checkpoint. Upstream unprocessed capture/refund observations remain absent until their existing workflow commits them.
 
@@ -202,7 +203,7 @@ Every integration event has an immutable envelope:
 }
 ```
 
-Envelope examples are placeholders, not executable fixtures. Order state events carry a full minimal projection snapshot: order ID, status, version, creation/update times, USD total, immutable confirmedAt and winning capture reference when applicable; exclude passwords, tokens, cookies, addresses, and email. Persist confirmedAt at the winning confirmation; later fulfillment snapshots retain it so reordered events cannot shift sales into a different day. Event types initially cover order-created/cancelled/expired/confirmed/processing/shipped/completed, inventory-adjusted, payment-captured, and refund-requested/succeeded/failed, prefixed by their producing module as in the example. Increment the order aggregate version once per state change. Event IDs are independent of aggregate IDs and transport delivery attempts. Breaking payload changes require a new schema version; unknown versions are quarantined, never silently ignored.
+Envelope examples are placeholders, not executable fixtures. The original required order-envelope enrichment (still incomplete) is a full snapshot: order ID, status, version, creation/update times, USD total, immutable confirmedAt and winning capture reference when applicable; exclude passwords, tokens, cookies, addresses, and email. Persist confirmedAt at the winning confirmation; later fulfillment snapshots retain it so reordered events cannot shift sales into a different day. The original required event family includes order lifecycle, inventory-adjusted, payment-captured and refund-requested/succeeded/failed. Current code emits ordering.order-created/cancelled/expired/confirmed/processing/shipped/completed, payments.payment-captured, payments.refund-pending/refund-succeeded and notifications.notification-created. Inventory-adjusted/refund-failed integration events and the confirmedAt/winning capture enrichment above are not implemented; direct reports use committed capture/item rows rather than assuming those envelope fields exist. Increment the order aggregate version once per state change. Event IDs are independent of aggregate IDs and transport delivery attempts. Breaking payload changes require a new schema version; unknown versions are quarantined, never silently ignored.
 
 Delivery is at least once. Outbox event identity is unique; each consumer's inbox `(consumerName,eventId)` is unique. Apply the consumer's durable effects and mark its inbox handled in one transaction. Lease expiry can run the same delivery again. Claim/complete using lease tokens; an old owner cannot acknowledge a newer lease. Global event ordering is not guaranteed. ADR-026 supersedes the originally planned reporting snapshot consumer: direct queries count unique authoritative financial rows and current persisted order states, without event-version state to regress. Paid sales recognize the one winning capture/confirmation UTC recording day using immutable order-item prices. All captured funds and succeeded-refund cash movements are separately reported; compensation of unallocated captures is not negative paid sales. Notifications retain their independent inbox/effect identity and later explicitly requested delivery behavior.
 
@@ -210,7 +211,7 @@ Failed deliveries retain error code, count, next attempt, and last failure time.
 
 ## 8. Acceptance criteria and required test evidence
 
-These are implementation obligations. Milestone 01 passes only the documentation criteria D01–D06; A01–A24 remain unimplemented until evidenced in status.
+These are implementation obligations. Milestone01 originally covered only D01–D06. Current A01–A24 coverage is in the acceptance audit/status; A16/A18/A19 retain explicit partial obligations, and local evidence is not remote/production acceptance.
 
 | ID | Invariant / acceptance criterion | Required evidence and milestone |
 | --- | --- | --- |
@@ -235,9 +236,9 @@ These are implementation obligations. Milestone 01 passes only the documentation
 | A13 | One active attempt/order; distinct identities for attempts, captures, callbacks and refunds | Unique constraint + concurrent request/callback tests, 15–18 |
 | A14 | Signed callbacks verify raw body, timestamp and event identity; cookie/unsigned requests rejected | HTTP tests incl. tampering, stale delivery signature, duplicate ID/different payload and unknown references, 17 |
 | A15 | Fulfillment only Confirmed -> Processing -> Shipped -> Completed; no paid cancellation | Domain/HTTP tests incl. skipped/reverse/stale transitions and role denial, 19 |
-| A16 | State/history/outbox atomically commit or roll back; history append only with operation refs | SQL rollback, uniqueness, runtime-role mutation rejection and ledger reconciliation tests, 08–19, 25 |
+| A16 | State/history/outbox atomically commit or roll back; history append only with operation refs; standalone stock-event obligation still incomplete | SQL rollback, uniqueness, runtime-role mutation rejection and ledger reconciliation tests, 08–19, 25 |
 | A17 | Worker scopes do not share DbContext; duplicate/expired lease cannot duplicate durable effects | Two-worker barrier tests + crash/lease-token recovery, 14–18, 23–24, 26 |
-| A18 | Outbox/inbox independently deduplicate; newer projection cannot regress on older event | Duplicate/out-of-order + transactional inbox/projection tests, 14, 23–24 |
+| A18 | Outbox/inbox independently deduplicate; no reporting projection under ADR-026; required order-envelope enrichment remains incomplete | Duplicate/out-of-order transactional inbox tests; direct report snapshots; explicit envelope gap in audit, 14, 23–24 |
 | A19 | Only classified transient failures retried with bounded attempts; permanent failures observable | Fault injection/exhaustion/operator retry tests, 14–18, 26–28 |
 | A20 | Frontend trusts server authority, exact cents, recoverable checkout retries, CSRF refresh | Client unit/component tests and browser flows, 20–22, 27 |
 | A21 | Local notifications uniquely recorded; direct reports distinguish winning sales, captures, succeeded refunds and net | Notification consumer SQL tests; reporting UTC/money/auth/range/snapshot tests under ADR-026, 23–24 |
@@ -249,7 +250,7 @@ Race tests must use separate connections/DbContexts and deterministic gates/barr
 
 ## 9. Deferred features
 
-Outside v1: real payment providers, card handling, homemade JWT/refresh tokens, microservices, message broker, Redis/distributed cache beyond ADR-024–025, event sourcing, generic CQRS/MediatR scaffolding, paid-order cancellation, returns, customer refunds, discounts, tax, shipping fees/providers/addresses, multiple sales currencies, guest checkout, split/partial payments, partial refunds, stock locations/backorders, product images/uploads, email/SMS provider integration, self-service password reset/email verification, social login/MFA, public Admin registration, analytics beyond the stated report, automated data retention/deletion, and deployment to a public environment. Do not implement these as prerequisites unless a later milestone explicitly changes scope.
+Outside v1: real payment providers, card handling, homemade JWT/refresh tokens, microservices, caching beyond the implemented ADR-024–025 scope, event sourcing, generic CQRS/MediatR scaffolding, paid-order cancellation, returns, customer refunds, discounts, tax, shipping fees/providers/addresses, multiple sales currencies, guest checkout, split/partial payments, partial refunds, stock locations/backorders, product images/uploads, email/SMS provider integration, self-service password reset/email verification, social login/MFA, public Admin registration, analytics beyond the stated report, automated data retention/deletion, and deployment to a public environment. Do not implement these as prerequisites unless a later milestone explicitly changes scope.
 
 ## Implementation note — milestone 14 expiry slice
 
@@ -315,7 +316,7 @@ Both keys have a 30-second absolute lifetime anchored before the source read, bo
 
 ## Implemented checkout/payment/live customer UI — milestone 21 + 23 UI slice
 
-[ADR-029](adr/0029-checkout-recovery-and-live-ui.md) defines exact per-user pending body/key retention across network/timeout/5xx, safe replay and explicit warned abandonment before a new modified-cart intention. Auth/CSRF and order ownership remain server-side; successful checkout does not imply captured payment. Customer order detail/cancel/attempt initiation and durable notifications now ship, including minimal safe paginated owner payment-status GET for verified capture/allocation/refund states. Countdown derives from server observation time and is informational; URL returns/hints cannot mark paid/expired. SignalR cookie/CSRF WebSocket negotiation invalidates scoped queries and reconnect refetches durable data; finite retries and polling/manual fallback apply. The existing Development-only simulator has no customer UI URL, so no invented provider page or browser machine secret is supplied. Production proxy/deployment remains deferred; Admin/report UI now ships under ADR-030 below.
+[ADR-029](adr/0029-checkout-recovery-and-live-ui.md) defines exact per-user pending body/key retention across network/timeout/5xx, safe replay and explicit warned abandonment before a new modified-cart intention. Auth/CSRF and order ownership remain server-side; successful checkout does not imply captured payment. Customer order detail/cancel/attempt initiation and durable notifications now ship, including minimal safe paginated owner payment-status GET for verified capture/allocation/refund states. Countdown derives from server observation time and is informational; URL returns/hints cannot mark paid/expired. SignalR cookie/CSRF WebSocket negotiation invalidates scoped queries and reconnect refetches durable data; finite retries and polling/manual fallback apply. The existing Development-only simulator has no customer UI URL, so no invented provider page or browser machine secret is supplied. The local replicated TLS proxy now ships under ADR-032; production deployment/HA remains outside scope. Admin/report UI ships under ADR-030 below.
 
 
 ## Implemented Admin workspace — milestone 22 + 24 UI slice
@@ -352,3 +353,8 @@ Register/login, catalog/cart, lost-response idempotent checkout, simulator payme
 [ADR-034](adr/0034-disposable-failure-and-load-lab.md) and the [load runbook/results](load-testing.md) define a separate explicitly configured synthetic lab, fixed request/data/time/resource bounds and predeclared thresholds. Pinned k6 measures cache off/on and stock/idempotency/broker-outage bursts through two real APIs. Deterministic real-dependency tests separately prove callback/expiry, post-commit ACK loss, refund uncertainty and two-owner lease fencing. Fault controls remain in test assemblies/Development or Testing hosts; no production endpoint is introduced.
 
 Results distinguish expected stock rejections, infrastructure/auth/validation errors, immutable money/stock/dedup invariants, backlog age and recovery. Cache warm state is verified rather than inferred from priming, and mutable availability remains authoritative in PG. Publish numeric allowlisted evidence and explicit unmeasured distributions/OS-kill limits; never claim local sequential RPS is production capacity or manufacture improvements. No public target, personal data, speculative index, deployment or existing-volume deletion is authorized.
+
+
+## Final portfolio audit / handoff
+
+[Acceptance audit](acceptance-audit.md), [flow diagrams](flows.md), [seven-minute demo](demo.md), [interview guide](interview-guide.md), [CV evidence](cv.md) and [remaining work/v2](remaining-work.md) are the current completion boundary. Generic operations endpoints/replay, standalone stock integration events and enriched order envelopes remain partial obligations. Explicit protected key initialization now precedes cold replicated serving; no production rotation/HA or remote CI claim is implied.

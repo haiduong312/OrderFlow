@@ -154,15 +154,10 @@ class Lab:
         self.postgres('CREATE EXTENSION pg_stat_statements; CREATE TABLE public."FailureLoadEnvironment" ("Id" uuid PRIMARY KEY); '
                       f'INSERT INTO public."FailureLoadEnvironment" VALUES (\'{self.run_id}\');')
         self.compose('run', '--rm', 'bootstrap-admin', name='bootstrap')
+        self.compose('run', '--rm', 'initialize-keys', name='initialize-keys')
         self.compose('up', '-d', '--wait', '--wait-timeout', '150', 'api1', 'api2', 'worker1', 'worker2', 'proxy', name='hosts')
         self.guard()
         self.wait_apis()
-        # The empty key ring was observed to reject cookies across cold replicas.
-        # Materialize it anonymously, recycle both readers before creating any session,
-        # then require cross-replica authentication. This is a local lab bootstrap step.
-        for _ in range(2):
-            self.browser.token()
-        self.restart_apis()
         self.seed()
         self.hardware()
 

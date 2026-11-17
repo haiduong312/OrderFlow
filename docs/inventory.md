@@ -33,7 +33,7 @@ Use a fresh operationId for each new intended receipt/adjustment; retain it and 
 
 Movement fields include movementId, productId, operation/operationId, Kind, ActorKind/ActorUserId, reason, OnHandDelta/ReservedDelta, before/after balances, revision and occurredAt. Deltas/snapshots and kind/actor shape have DB checks; User/Product references are restrictive. Initialization revision=0; each successful change adds the next revision. History ordering uses unique (ProductId,Revision), so equal timestamps and wall-clock skew do not reorder durable effects. UTC JSON timestamps use Z and six fractional digits; quantities/revisions remain numbers and enum names are strings.
 
-PostgreSQL triggers reject UPDATE/DELETE/TRUNCATE on movements; EF also prevents modifications of saved movement properties. Correct mistakes by a new reasoned adjustment, never editing the ledger. The schema owner could intentionally change/drop these protections; deployment runtime privileges still need the planned least-privilege setup. No production history-edit/delete endpoint exists.
+PostgreSQL triggers reject UPDATE/DELETE/TRUNCATE on movements; EF also prevents modifications of saved movement properties. Correct mistakes by a new reasoned adjustment, never editing the ledger. The schema owner could intentionally change/drop these protections; the replicated profile now supplies restricted runtime roles under ADR-032; the schema owner remains privileged. No production history-edit/delete endpoint exists.
 
 ## Transactions and tracked state
 
@@ -83,7 +83,7 @@ Customer [checkout](checkout.md) now creates Active InventoryReservations and Re
 
 ## Reservation release (13)
 
-Customer [cancellation/expiry](orders.md) now takes the order lock first, then sorted balance/reservation locks. It changes Active -> Released, records ReleasedAt plus Cancelled/Expired reason, decrements Reserved without changing OnHand and appends a Customer Release movement under ReleaseStock:v1/reservation UUID. PostgreSQL blocks terminal reservation reactivation/metadata rewrites. State/history/release/outbox share one transaction; repeated cancellation has no second inventory effect. Admin fulfillment changes no stock. Consumption/payment and automatic expiry workers remain unimplemented.
+Customer [cancellation/expiry](orders.md) now takes the order lock first, then sorted balance/reservation locks. It changes Active -> Released, records ReleasedAt plus Cancelled/Expired reason, decrements Reserved without changing OnHand and appends a Customer Release movement under ReleaseStock:v1/reservation UUID. PostgreSQL blocks terminal reservation reactivation/metadata rewrites. State/history/release/outbox share one transaction; repeated cancellation has no second inventory effect. Admin fulfillment changes no stock. This historical release slice deferred consumption/payment/expiry; later settlement/expiry milestones now implement them as described below and in the current audit.
 
 ## Verified payment consumption
 
